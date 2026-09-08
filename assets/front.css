@@ -1,0 +1,163 @@
+/**
+ * HooshSEO — front-end styles for plugin-generated blocks.
+ * Small on purpose: Speed::critical_css() inlines this file above the fold.
+ * Everything is opt-in through the theme's own colours with --hoosh-* overrides.
+ */
+
+.hs-hide { display: none !important; }
+
+/* ---------- breadcrumbs ---------- */
+.hoosh-crumbs {
+	--hs-fs: 13px;
+	--hs-gap: 7px;
+	--hs-mut: #6b7280;
+	font-size: var(--hs-fs);
+	line-height: 1.7;
+	color: var(--hs-mut);
+	margin: 0 0 14px;
+	padding: 0;
+}
+.hoosh-crumbs--small { --hs-fs: 12px; --hs-gap: 5px; }
+.hoosh-crumbs--large { --hs-fs: 15px; --hs-gap: 9px; }
+.hoosh-crumbs__prefix { margin-inline-end: 6px; opacity: .8; }
+.hoosh-crumbs__list { display: flex; flex-wrap: wrap; align-items: center; gap: var(--hs-gap); list-style: none; margin: 0; padding: 0; }
+.hoosh-crumbs__item { display: inline-flex; align-items: center; gap: var(--hs-gap); margin: 0; }
+.hoosh-crumbs__item + .hoosh-crumbs__item::before {
+	content: '/';
+	color: var(--hs-mut);
+	opacity: .55;
+	font-weight: 600;
+}
+html[dir="rtl"] .hoosh-crumbs__item + .hoosh-crumbs__item::before { content: '‹'; }
+html[dir="ltr"] .hoosh-crumbs__item + .hoosh-crumbs__item::before { content: '›'; }
+.hoosh-crumbs__sep { display: none; }
+.hoosh-crumbs a { color: inherit; text-decoration: none; border-bottom: 1px solid transparent; }
+.hoosh-crumbs a:hover { color: var(--hoosh-accent, inherit); border-bottom-color: currentColor; }
+.hoosh-crumbs__current { color: var(--hoosh-ink, #16202e); font-weight: 600; }
+.hoosh-crumbs__count { opacity: .7; font-weight: 400; }
+.hoosh-crumbs svg { width: 1em; height: 1em; vertical-align: -2px; fill: currentColor; }
+
+/* ---------- answer box (AI / featured snippet) ---------- */
+.hoosh-answer {
+	margin: 0 0 22px;
+	padding: 14px 16px;
+	border-radius: 12px;
+	background: var(--hoosh-soft, rgba(20, 165, 143, .07));
+	border: 1px solid var(--hoosh-line, rgba(20, 165, 143, .28));
+	border-inline-start-width: 4px;
+}
+.hoosh-answer__q { margin: 0 0 7px; font-size: 14px; font-weight: 700; line-height: 1.6; }
+.hoosh-answer__q::before { content: '؟'; margin-inline-end: 6px; opacity: .5; }
+.hoosh-answer__a { margin: 0; font-size: 15px; line-height: 1.95; }
+.hoosh-answer__a p { margin: 0; }
+.hoosh-answer__a > p + p { margin-top: .6em; }
+
+/* ---------- AI brief (kept out of the visual flow) ---------- */
+.hoosh-ai-brief { display: none; }
+
+/* ---------- FAQ block ---------- */
+.hoosh-faq { margin: 26px 0; }
+.hoosh-faq__title, .hoosh-faq > h2, .hoosh-faq > h3 { margin: 0 0 12px; font-size: 19px; }
+.hoosh-faq__item {
+	border: 1px solid var(--hoosh-line, #e5e7eb);
+	border-radius: 10px;
+	margin-bottom: 8px;
+	background: var(--hoosh-surface, transparent);
+	overflow: hidden;
+}
+.hoosh-faq__item > summary {
+	cursor: pointer;
+	list-style: none;
+	padding: 12px 14px;
+	font-weight: 600;
+	font-size: 15px;
+	line-height: 1.7;
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: 10px;
+}
+.hoosh-faq__item > summary::-webkit-details-marker { display: none; }
+.hoosh-faq__item > summary::after {
+	content: '+';
+	flex: 0 0 auto;
+	width: 22px;
+	height: 22px;
+	border-radius: 99px;
+	display: grid;
+	place-items: center;
+	background: var(--hoosh-soft, rgba(20, 165, 143, .12));
+	color: var(--hoosh-accent, #14a58f);
+	font-weight: 700;
+	line-height: 1;
+	transition: transform .18s ease;
+}
+.hoosh-faq__item[open] > summary::after { content: '−'; transform: rotate(180deg); }
+.hoosh-faq__answer { padding: 0 14px 13px; font-size: 14.5px; line-height: 1.95; color: inherit; }
+.hoosh-faq__answer > :last-child { margin-bottom: 0; }
+.hoosh-faq--list .hoosh-faq__item { border: 0; border-bottom: 1px solid var(--hoosh-line, #e5e7eb); border-radius: 0; }
+.hoosh-faq--list .hoosh-faq__item > summary { padding-inline: 0; }
+.hoosh-faq--plain .hoosh-faq__item > summary::after { display: none; }
+
+/* ---------- How-to block ---------- */
+.hoosh-howto { margin: 24px 0; padding: 0; list-style: none; counter-reset: hs-step; }
+.hoosh-howto__step {
+	position: relative;
+	counter-increment: hs-step;
+	padding: 12px 54px 12px 12px;
+	border-inline-start: 2px solid var(--hoosh-line, #e5e7eb);
+}
+.hoosh-howto__step::before {
+	content: counter(hs-step);
+	position: absolute;
+	inset-inline-start: -14px;
+	top: 12px;
+	width: 26px;
+	height: 26px;
+	border-radius: 99px;
+	display: grid;
+	place-items: center;
+	background: var(--hoosh-accent, #14a58f);
+	color: #fff;
+	font-size: 12.5px;
+	font-weight: 700;
+}
+.hoosh-howto__step h3 { margin: 0 0 5px; font-size: 16px; }
+.hoosh-howto__step > :last-child { margin-bottom: 0; }
+
+/* ---------- related posts ---------- */
+.hoosh-related { margin: 30px 0 10px; padding: 16px; border-radius: 12px; border: 1px solid var(--hoosh-line, #e5e7eb); background: var(--hoosh-bg, #f8fafc); }
+.hoosh-related h2, .hoosh-related h3 { margin: 0 0 10px; font-size: 16px; }
+.hoosh-related ul { list-style: none; margin: 0; padding: 0; display: grid; gap: 7px; }
+.hoosh-related li { display: flex; align-items: center; gap: 8px; font-size: 14.5px; }
+.hoosh-related a { text-decoration: none; }
+.hoosh-related a:hover { text-decoration: underline; }
+.hoosh-related__score { font-size: 11px; opacity: .55; border: 1px solid currentColor; border-radius: 99px; padding: 0 6px; }
+
+/* ---------- auto internal links ---------- */
+a.hoosh-link--auto, .hoosh-autolink { text-decoration: underline; text-decoration-style: dotted; text-underline-offset: 3px; }
+a.hoosh-link--auto:hover, .hoosh-autolink:hover { text-decoration-style: solid; }
+
+/* ---------- HTML sitemap ---------- */
+.hoosh-html-sitemap { display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 20px; }
+.hoosh-html-sitemap__group h3 { margin: 0 0 8px; font-size: 16px; border-bottom: 1px solid var(--hoosh-line, #e5e7eb); padding-bottom: 6px; }
+.hoosh-html-sitemap__group ul { list-style: none; margin: 0; padding: 0; display: grid; gap: 4px; }
+.hoosh-html-sitemap__group a { text-decoration: none; font-size: 14px; }
+.hoosh-html-sitemap__group a:hover { text-decoration: underline; }
+
+/* ---------- WooCommerce product fields ---------- */
+#hoosh-woo-fields .hoosh-field { margin-bottom: 8px; }
+#hoosh-woo-fields label { display: block; font-weight: 600; margin-bottom: 3px; }
+#hoosh-woo-fields input[type="text"], #hoosh-woo-fields textarea { width: 100%; }
+
+/* ---------- theme hooks ---------- */
+body.hoosh-has-answer-box .entry-content > p:first-of-type { margin-top: 0; }
+
+@media (prefers-color-scheme: dark) {
+	.hoosh-crumbs, .hoosh-answer { --hoosh-ink: #e6ebf4; }
+}
+@media (max-width: 600px) {
+	.hoosh-crumbs { --hs-fs: 12px; }
+	.hoosh-howto__step { padding-inline-end: 8px; }
+	.hoosh-html-sitemap { grid-template-columns: minmax(0, 1fr); }
+}
