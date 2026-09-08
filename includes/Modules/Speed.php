@@ -58,6 +58,7 @@ final class Speed {
 	 */
 	public function bootstrap_front() {
 		$settings = \hoosh_seo()->settings;
+		add_action( 'wp_enqueue_scripts', array( __CLASS__, 'front_css' ), 15 );
 		if ( ! $settings->on( 'speed.enabled', false ) ) {
 			return;
 		}
@@ -635,11 +636,23 @@ final class Speed {
 	/**
 	 * Inline the plugin's front CSS, defer the rest.
 	 */
+	/**
+	 * Enqueue the front-end stylesheet for plugin-generated blocks.
+	 */
+	public static function front_css() {
+		if ( ! file_exists( HOOSH_SEO_DIR . 'assets/front.css' ) ) {
+			return;
+		}
+		wp_enqueue_style( 'hoosh-seo-front', HOOSH_SEO_URL . 'assets/front.css', array(), HOOSH_SEO_VERSION );
+	}
+
 	public static function critical_css() {
 		$file = HOOSH_SEO_DIR . 'assets/front.css';
 		if ( ! file_exists( $file ) ) {
 			return;
 		}
+		/* The whole file is inlined above the fold — skip the extra request. */
+		wp_dequeue_style( 'hoosh-seo-front' );
 		$css = (string) file_get_contents( $file ); // phpcs:ignore
 		$css = (string) preg_replace( '#/\*.*?\*/#s', '', $css );
 		$css = trim( (string) preg_replace( '/\s*([{}:;,])\s*/', '$1', $css ) );

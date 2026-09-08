@@ -709,7 +709,7 @@ final class RankTracker {
 			'recorded_on'   => $today,
 			'position'      => $position ? $position : 101,
 			'prev_position' => $prev_pos ? $prev_pos : $prev,
-			'change'        => (float) $delta,
+			'delta'         => (float) $delta,
 			'url'           => mb_substr( (string) ( $out['url'] ?? '' ), 0, 480 ),
 			'source'        => mb_substr( (string) ( $out['source'] ?? '' ), 0, 30 ),
 			'clicks'        => (int) ( $out['clicks'] ?? 0 ),
@@ -861,7 +861,7 @@ final class RankTracker {
 		if ( ! Database::exists( 'positions' ) ) {
 			return array( 'rows' => array(), 'labels' => array() );
 		}
-		$sql = 'SELECT recorded_on, position, prev_position, change, clicks, impressions, source, url FROM ' . Database::table( 'positions' ) . ' WHERE recorded_on >= DATE_SUB(CURDATE(), INTERVAL %d DAY)';
+		$sql = 'SELECT recorded_on, position, prev_position, delta, clicks, impressions, source, url FROM ' . Database::table( 'positions' ) . ' WHERE recorded_on >= DATE_SUB(CURDATE(), INTERVAL %d DAY)';
 		$params = array( $days );
 		if ( (int) $keyword_id ) {
 			$sql     .= ' AND keyword_id = %d';
@@ -878,7 +878,7 @@ final class RankTracker {
 			$out[]    = array(
 				'date'      => (string) $row['recorded_on'],
 				'position'  => $position,
-				'delta'     => (float) $row['change'],
+				'delta'     => (float) ( $row['delta'] ?? 0 ),
 				'clicks'    => (int) $row['clicks'],
 				'impressions' => (int) $row['impressions'],
 				'source'    => (string) $row['source'],

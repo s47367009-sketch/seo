@@ -1,0 +1,12 @@
+# build artefacts (tools/build-zip.sh output)
+dist/
+
+# local tooling
+node_modules/
+.phpunit.result.cache
+
+# editors / os
+.DS_Store
+.idea/
+.vscode/
+*.log

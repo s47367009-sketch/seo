@@ -262,11 +262,13 @@ final class Rest {
 		register_rest_route( $ns, '/migration/preview', array_merge( array( 'callback' => array( __CLASS__, 'migration_preview' ) ), $this->read() ) );
 		register_rest_route( $ns, '/migration/run', array_merge( array( 'callback' => array( __CLASS__, 'migration_run' ) ), $this->write() ) );
 		register_rest_route( $ns, '/migration/undo', array_merge( array( 'callback' => array( __CLASS__, 'migration_undo' ) ), $this->write() ) );
+		register_rest_route( $ns, '/migration/cleanup', array_merge( array( 'callback' => array( __CLASS__, 'migration_cleanup' ) ), $this->write() ) );
 		register_rest_route( $ns, '/report', array_merge( array( 'callback' => array( __CLASS__, 'report_html' ) ), $this->read() ) );
 		register_rest_route( $ns, '/report/email', array_merge( array( 'callback' => array( __CLASS__, 'report_email' ) ), $this->write() ) );
 		register_rest_route( $ns, '/tools/flush', array_merge( array( 'callback' => array( __CLASS__, 'tools_flush' ) ), $this->write() ) );
 		register_rest_route( $ns, '/tools/system', array_merge( array( 'callback' => array( __CLASS__, 'tools_system' ) ), $this->read() ) );
 		register_rest_route( $ns, '/tools/cron', array_merge( array( 'callback' => array( __CLASS__, 'tools_cron' ) ), $this->read() ) );
+		register_rest_route( $ns, '/docs/(?P<name>[a-zA-Z0-9_-]+)', array_merge( array( 'callback' => array( __CLASS__, 'docs' ) ), $this->read() ) );
 
 		// ---- post-scoped editor writes -------------------------------
 		register_rest_route(
@@ -1091,7 +1093,9 @@ final class Rest {
 				'status'   => Robots::status(),
 				'custom'   => (string) get_option( 'hoosh_robots_txt', '' ),
 				'override' => (bool) hoosh_seo()->settings->get( 'robots.override_file', false ),
+				'override_file' => (bool) hoosh_seo()->settings->get( 'robots.override_file', false ),
 				'bots'     => Robots::bot_catalog(),
+				'virtual'  => ! file_exists( untrailingslashit( ABSPATH ) . '/robots.txt' ),
 			)
 		);
 	}
@@ -1105,8 +1109,37 @@ final class Rest {
 	public static function robots_save( $request ) {
 		$content = (string) $request['content'];
 		update_option( 'hoosh_robots_txt', $content );
-		Audit::log( 'robots', 'save', array( 'after' => array( 'content' => mb_substr( $content, 0, 4000 ) ) ) );
-		return rest_ensure_response( array( 'ok' => true, 'content' => Robots::content(), 'message' => __( 'رباتز ذخیره شد.', 'hoosh-seo' ) ) );
+
+		$override = $request->get_param( 'override' );
+		$written  = null;
+		$state    = (bool) hoosh_seo()->settings->get( 'robots.override_file', false );
+		if ( null !== $override ) {
+			$state = (bool) $override;
+			hoosh_seo()->settings->set( array( 'robots.override_file' => $state ) );
+			if ( $state ) {
+				$written = Robots::write_file();
+			}
+		}
+
+		Audit::log(
+			'robots',
+			'save',
+			array(
+				'after'  => array(
+					'content'  => mb_substr( $content, 0, 4000 ),
+					'override' => $state,
+				),
+			)
+		);
+		return rest_ensure_response(
+			array(
+				'ok'       => true,
+				'content'  => Robots::content(),
+				'override' => $state,
+				'written'  => $written,
+				'message'  => __( 'رباتز ذخیره شد.', 'hoosh-seo' ),
+			)
+		);
 	}
 
 	/**
@@ -1935,6 +1968,41 @@ final class Rest {
 	}
 
 	/**
+	 * Delete the meta the *other* plugin wrote, after a verified import.
+	 *
+	 * @param \WP_REST_Request $request Request.
+	 * @return \WP_REST_Response|\WP_Error
+	 */
+	public static function migration_cleanup( $request ) {
+		$key     = sanitize_key( (string) $request['source'] );
+		$catalog = Migration::sources();
+		if ( ! is_array( $catalog ) || ! $catalog ) {
+			return new \WP_Error( 'hs-no-sources', __( 'فهرست مبدأ خالی است.', 'hoosh-seo' ), array( 'status' => 400 ) );
+		}
+		if ( $key && ! isset( $catalog[ $key ] ) ) {
+			return new \WP_Error( 'hs-no-source', __( 'این مبدأ شناخته شده نیست.', 'hoosh-seo' ), array( 'status' => 400 ) );
+		}
+		$counts = array();
+		foreach ( $catalog as $name => $def ) {
+			if ( $key && $key !== $name ) {
+				continue;
+			}
+			$counts[ $name ] = (int) Migration::cleanup( (array) $def );
+		}
+		$total = array_sum( $counts );
+		return rest_ensure_response(
+			array(
+				'ok'         => true,
+				'deleted'    => $total,
+				'per_source' => $counts,
+				'message'    => $total
+					? sprintf( /* translators: %d number of rows. */ __( '%d ردیف از داده افزونه مبدأ پاک شد.', 'hoosh-seo' ), $total )
+					: __( 'چیزی پاک نشد. برای این کار، گزینهٔ «حذف داده مبدأ» را در تنظیمات → مهاجرت روشن کنید.', 'hoosh-seo' ),
+			)
+		);
+	}
+
+	/**
 	 * HTML report (string, rendered by the Studio in an iframe/srcdoc).
 	 *
 	 * @return \WP_REST_Response
@@ -2071,4 +2139,163 @@ final class Rest {
 			)
 		);
 	}
+	/**
+	 * Serve a bundled markdown doc as HTML (Studio → راهنما).
+	 *
+	 * @param \WP_REST_Request $request Request.
+	 * @return \WP_REST_Response|\WP_Error
+	 */
+	public static function docs( $request ) {
+		$name = sanitize_key( (string) $request['name'] );
+		$allowed = array( 'install', 'readme' );
+		if ( ! in_array( $name, $allowed, true ) ) {
+			return new \WP_Error( 'hs-no-doc', __( 'این سند موجود نیست.', 'hoosh-seo' ), array( 'status' => 404 ) );
+		}
+		$file = 'readme' === $name ? HOOSH_SEO_DIR . 'readme.txt' : HOOSH_SEO_DIR . 'docs/INSTALL.md';
+		if ( ! is_readable( $file ) ) {
+			return new \WP_Error( 'hs-no-doc', __( 'فایل راهنما روی سرور نیست.', 'hoosh-seo' ), array( 'status' => 404 ) );
+		}
+		$raw = (string) file_get_contents( $file ); // phpcs:ignore WordPress.WP.AlternativeFunctions
+		return rest_ensure_response(
+			array(
+				'ok'      => true,
+				'name'    => $name,
+				'bytes'   => strlen( $raw ),
+				'updated' => (string) date_i18n( 'c', (int) filemtime( $file ) ),
+				'html'    => self::markdown( $raw ),
+			)
+		);
+	}
+
+	/**
+	 * Very small markdown subset: headings, lists, tables, fenced code, inline
+	 * code, bold, links. Enough for the bundled docs, no dependency.
+	 *
+	 * @param string $text Markdown.
+	 * @return string HTML (escaped).
+	 */
+	protected static function markdown( $text ) {
+		$text   = str_replace( array( "\r\n", "\t" ), array( "\n", '    ' ), (string) $text );
+		$lines  = explode( "\n", $text );
+		$out    = array();
+		$type   = '';
+		$in_code = false;
+		$close = function () use ( &$type, &$out ) {
+			if ( 'ul' === $type || 'ol' === $type ) {
+				$out[] = '</' . $type . '>';
+			} elseif ( 'p' === $type ) {
+				$out[] = '</p>';
+			} elseif ( 'table' === $type ) {
+				$out[] = '</tbody></table>';
+			}
+			$type = '';
+		};
+		foreach ( $lines as $line ) {
+			if ( 0 === strpos( trim( $line ), '```' ) ) {
+				if ( $in_code ) {
+					$out[]  = '</code></pre>';
+					$in_code = false;
+				} else {
+					$close();
+					$out[]   = '<pre><code>';
+					$in_code = true;
+				}
+				continue;
+			}
+			if ( $in_code ) {
+				$out[] = esc_html( $line );
+				continue;
+			}
+			$trim = trim( $line );
+			if ( '' === $trim ) {
+				$close();
+				continue;
+			}
+			if ( preg_match( '/^(#{1,4})\s+(.*)$/', $trim, $m ) ) {
+				$close();
+				$lvl = strlen( $m[1] );
+				$out[] = '<h' . $lvl . '>' . self::md_inline( $m[2] ) . '</h' . $lvl . '>';
+				continue;
+			}
+			if ( preg_match( '/^[-*]\s+(.*)$/', $trim, $m ) ) {
+				if ( 'ul' !== $type ) {
+					$close();
+					$out[] = '<ul>';
+					$type  = 'ul';
+				}
+				$out[] = '<li>' . self::md_inline( $m[1] ) . '</li>';
+				continue;
+			}
+			if ( preg_match( '/^\d+[.)]\s+(.*)$/', $trim, $m ) ) {
+				if ( 'ol' !== $type ) {
+					$close();
+					$out[] = '<ol>';
+					$type  = 'ol';
+				}
+				$out[] = '<li>' . self::md_inline( $m[1] ) . '</li>';
+				continue;
+			}
+			if ( false !== strpos( $trim, '|' ) && ! preg_match( '/^\|?[-: |]+\|?$/', $trim ) ) {
+				$cells = array_values( array_filter( array_map( 'trim', explode( '|', $trim ) ), 'strlen' ) );
+				if ( 'table' !== $type ) {
+					$close();
+					$out[] = '<table class="hs-table__simple"><thead><tr>';
+					foreach ( $cells as $cell ) {
+						$out[] = '<th>' . self::md_inline( $cell ) . '</th>';
+					}
+					$out[] = '</tr></thead><tbody>';
+					$type  = 'table';
+					continue;
+				}
+				$out[] = '<tr>';
+				foreach ( $cells as $cell ) {
+					$out[] = '<td>' . self::md_inline( $cell ) . '</td>';
+				}
+				$out[] = '</tr>';
+				continue;
+			}
+			if ( preg_match( '/^\[([^\]]+)\]:\s*(\S+)/', $trim, $m ) ) {
+				continue;
+			}
+			if ( 'p' !== $type ) {
+				$close();
+				$out[] = '<p>';
+				$type  = 'p';
+			}
+			$out[] = self::md_inline( $trim );
+		}
+		$close();
+		if ( $in_code ) {
+			$out[] = '</code></pre>';
+		}
+		return implode( "\n", $out );
+	}
+
+	/**
+	 * Inline markdown: `code`, **bold**, [text](url).
+	 *
+	 * @param string $line Raw line.
+	 * @return string
+	 */
+	protected static function md_inline( $line ) {
+		$line = (string) $line;
+		$line = preg_replace( '/`([^`]+)`/', '<code>$1</code>', $line );
+		$line = preg_replace( '/\*\*([^*]+)\*\*/', '<b>$1</b>', $line );
+		$line = preg_replace( '/\[([^\]]+)\]\((https?:\/\/[^)\s]+)\)/', '<a href="$2" target="_blank" rel="noopener">$1</a>', $line );
+		// Keep anything that looks like markup out, then re-allow the tags we just made.
+		$line = wp_kses(
+			$line,
+			array(
+				'code' => array(),
+				'b'    => array(),
+				'a'    => array(
+					'href'   => array(),
+					'target' => array(),
+					'rel'    => array(),
+				),
+			)
+		);
+		return $line;
+	}
 }
+

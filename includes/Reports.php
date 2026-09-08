@@ -752,15 +752,22 @@ final class Reports {
 	 */
 	protected static function report_css( $accent ) {
 		$accents = array(
-			'indigo' => '#4f46e5',
-			'blue'   => '#2563eb',
-			'violet' => '#7c3aed',
-			'teal'   => '#0d9488',
-			'green'  => '#16a34a',
-			'orange' => '#ea580c',
-			'rose'   => '#e11d48',
+			'firouzeh' => '#14a58f',
+			'lajevard' => '#7c4dff',
+			'zahresh'  => '#10b981',
+			'anabi'    => '#2f6fed',
+			'sormeh'   => '#3f5170',
+			'tajalli'  => '#e0870b',
+			/* legacy aliases — older stored values still resolve. */
+			'indigo'   => '#4f46e5',
+			'blue'     => '#2563eb',
+			'violet'   => '#7c3aed',
+			'teal'     => '#0d9488',
+			'green'    => '#16a34a',
+			'orange'   => '#ea580c',
+			'rose'     => '#e11d48',
 		);
-		$color = isset( $accents[ $accent ] ) ? $accents[ $accent ] : $accents['indigo'];
+		$color = isset( $accents[ $accent ] ) ? $accents[ $accent ] : $accents['firouzeh'];
 
 		return ':root{--a:' . $color . ';--ink:#0f172a;--mut:#64748b;--line:#e6e8ef;--bg:#f6f7fb;--ok:#16a34a;--warn:#d97706;--bad:#dc2626}'
 			. '*{box-sizing:border-box}body{margin:0;padding:24px;background:var(--bg);color:var(--ink);font:14px/1.7 Vazirmatn,Tahoma,"Segoe UI",sans-serif}'

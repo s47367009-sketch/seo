@@ -5,7 +5,7 @@
  * Description:       افزونه جامع سئوی فارسی با هوش مصنوعی: تحلیل محتوا، تحقیق کلمات کلیدی بومی، اسکیما، نقشه سایت، ریدایرکت، لینک داخلی، ردیاب رتبه، ایندکس‌بان، بهینه‌سازی برای موتورهای پاسخ (GEO) و اپلیکیشن مستقل تمام‌صفحه.
  * Version:           1.0.0
  * Requires at least: 5.8
- * Requires PHP:      7.4
+ * Requires PHP:      7.3
  * Author:            HooshSEO
  * Author URI:        https://github.com/s47367009-sketch/seo
  * License:           GPL-2.0-or-later
@@ -28,7 +28,7 @@ define( 'HOOSH_SEO_FILE', __FILE__ );
 define( 'HOOSH_SEO_DIR', plugin_dir_path( __FILE__ ) );
 define( 'HOOSH_SEO_URL', plugin_dir_url( __FILE__ ) );
 define( 'HOOSH_SEO_BASENAME', plugin_basename( __FILE__ ) );
-define( 'HOOSH_SEO_MIN_PHP', '7.4' );
+define( 'HOOSH_SEO_MIN_PHP', '7.3' );
 define( 'HOOSH_SEO_APP_SLUG', 'hoosh-seo-studio' );
 
 /**

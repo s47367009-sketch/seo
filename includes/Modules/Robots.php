@@ -216,12 +216,47 @@ final class Robots {
 			wp_die( 'forbidden' );
 		}
 		check_admin_referer( 'hoosh_seo_robots' );
-		$file = untrailingslashit( ABSPATH ) . '/robots.txt';
-		file_put_contents( $file, self::content( (bool) get_option( 'blog_public' ) ) ); // phpcs:ignore WordPress.WP.AlternativeFunctions
-		Helpers::cache_flush( 'robots' );
+		self::write_file();
 		$back = wp_get_referer() ? wp_get_referer() : Admin::settings_url();
 		wp_safe_redirect( $back );
 		exit;
+	}
+
+	/**
+	 * Write a physical robots.txt and report what happened.
+	 *
+	 * Some hosts ignore the virtual output and only serve a real file, so the
+	 * Studio offers this as an opt-in ("override_file"). Nothing is ever
+	 * deleted: turning the option off only stops the plugin from writing.
+	 *
+	 * @return array {ok, file, bytes, error}
+	 */
+	public static function write_file() {
+		$root = untrailingslashit( ABSPATH );
+		$file = $root . '/robots.txt';
+		$out  = array(
+			'ok'    => false,
+			'file'  => $file,
+			'bytes' => 0,
+			'error' => '',
+		);
+		if ( ! is_dir( $root ) || ! is_writable( $root ) ) {
+			$out['error'] = __( 'پوشهٔ اصلی وردپرس نوشتنی نیست.', 'hoosh-seo' );
+			return $out;
+		}
+		$written = @file_put_contents( $file, self::content( (bool) get_option( 'blog_public' ) ) ); // phpcs:ignore WordPress.WP.AlternativeFunctions, no special chars
+		if ( false === $written ) {
+			$out['error'] = __( 'نوشتن فایل robots.txt ممکن نشد.', 'hoosh-seo' );
+			return $out;
+		}
+		$out['ok']    = true;
+		$out['bytes'] = (int) $written;
+		Helpers::cache_flush( 'robots' );
+		/**
+		 * Fires after the physical robots.txt has been written.
+		 */
+		do_action( 'hoosh_seo_robots_written', $file, (int) $written );
+		return $out;
 	}
 
 	/**
