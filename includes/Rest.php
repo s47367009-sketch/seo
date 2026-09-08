@@ -8,6 +8,14 @@
 namespace HooshSEO;
 
 use HooshSEO\AI\Gateway;
+use HooshSEO\Agent\Agent;
+use HooshSEO\Agent\Guard;
+use HooshSEO\Agent\Insight;
+use HooshSEO\Agent\Memory;
+use HooshSEO\Agent\Orchestrator;
+use HooshSEO\Agent\Pipeline;
+use HooshSEO\Agent\Planner;
+use HooshSEO\Agent\Skills;
 use HooshSEO\AI\Providers;
 use HooshSEO\AI\Tasks;
 use HooshSEO\Modules\Audit;
@@ -258,6 +266,19 @@ final class Rest {
 		register_rest_route( $ns, '/automation/pending', array_merge( array( 'callback' => array( __CLASS__, 'automation_pending' ) ), $this->read() ) );
 		register_rest_route( $ns, '/automation/apply', array_merge( array( 'callback' => array( __CLASS__, 'automation_apply' ) ), $this->write() ) );
 		register_rest_route( $ns, '/automation/undo', array_merge( array( 'callback' => array( __CLASS__, 'automation_undo' ) ), $this->write() ) );
+
+		// ---- autonomous agent ---------------------------------------
+		register_rest_route( $ns, '/agent/status', array_merge( array( 'callback' => array( __CLASS__, 'agent_status' ) ), $this->read() ) );
+		register_rest_route( $ns, '/agent/diagnose', array_merge( array( 'callback' => array( __CLASS__, 'agent_diagnose' ) ), $this->read() ) );
+		register_rest_route( $ns, '/agent/plan', array_merge( array( 'callback' => array( __CLASS__, 'agent_plan' ) ), $this->read() ) );
+		register_rest_route( $ns, '/agent/run', array_merge( array( 'callback' => array( __CLASS__, 'agent_run' ) ), $this->write() ) );
+		register_rest_route( $ns, '/agent/halt', array_merge( array( 'callback' => array( __CLASS__, 'agent_halt' ) ), $this->write() ) );
+		register_rest_route( $ns, '/agent/runs', array_merge( array( 'callback' => array( __CLASS__, 'agent_runs' ) ), $this->read() ) );
+		register_rest_route( $ns, '/agent/run/(?P<id>\d+)', array_merge( array( 'callback' => array( __CLASS__, 'agent_run_detail' ) ), $this->read() ) );
+		register_rest_route( $ns, '/agent/revert/(?P<step>\d+)', array_merge( array( 'callback' => array( __CLASS__, 'agent_revert' ) ), $this->write() ) );
+		register_rest_route( $ns, '/agent/articles', array_merge( array( 'callback' => array( __CLASS__, 'agent_articles' ) ), $this->read() ) );
+		register_rest_route( $ns, '/agent/article', array_merge( array( 'callback' => array( __CLASS__, 'agent_article' ) ), $this->write() ) );
+		register_rest_route( $ns, '/agent/opportunities', array_merge( array( 'callback' => array( __CLASS__, 'agent_opportunities' ) ), $this->read() ) );
 		register_rest_route( $ns, '/migration', array_merge( array( 'callback' => array( __CLASS__, 'migration_list' ) ), $this->read() ) );
 		register_rest_route( $ns, '/migration/preview', array_merge( array( 'callback' => array( __CLASS__, 'migration_preview' ) ), $this->read() ) );
 		register_rest_route( $ns, '/migration/run', array_merge( array( 'callback' => array( __CLASS__, 'migration_run' ) ), $this->write() ) );
@@ -1925,6 +1946,161 @@ final class Rest {
 	 */
 	public static function automation_undo( $request ) {
 		return rest_ensure_response( Automation::undo( sanitize_text_field( (string) $request['batch'] ) ) );
+	}
+
+	/* -------------------- autonomous agent -------------------- */
+
+	/**
+	 * Agent overview for Mission Control.
+	 *
+	 * @return \WP_REST_Response
+	 */
+	public static function agent_status() {
+		Agent::instance();
+		return rest_ensure_response( array( 'ok' => true ) + Agent::status() );
+	}
+
+	/**
+	 * Measure the site without changing anything.
+	 *
+	 * @return \WP_REST_Response
+	 */
+	public static function agent_diagnose() {
+		$out = Insight::diagnose();
+		return rest_ensure_response( array( 'ok' => true ) + $out );
+	}
+
+	/**
+	 * Show what the agent would do, without doing it.
+	 *
+	 * @return \WP_REST_Response
+	 */
+	public static function agent_plan() {
+		$ctx  = Guard::context( 0, 'preview' );
+		$plan = Planner::plan( Insight::diagnose(), $ctx );
+		return rest_ensure_response( array( 'ok' => true ) + $plan );
+	}
+
+	/**
+	 * Run the agent now.
+	 *
+	 * @param \WP_REST_Request $request Request.
+	 * @return \WP_REST_Response
+	 */
+	public static function agent_run( $request ) {
+		Agent::instance();
+		$data   = (array) $request->get_json_params();
+		$report = Orchestrator::run(
+			array(
+				'triggered_by' => 'manual',
+				'mode'         => 'manual',
+				'dry_run'      => empty( $data['dry_run'] ) ? null : true,
+				'goal'         => isset( $data['goal'] ) ? (string) $data['goal'] : '',
+			)
+		);
+		return rest_ensure_response( ( array( 'ok' => ! empty( $report['ok'] ) ) ) + $report );
+	}
+
+	/**
+	 * Kill switch.
+	 *
+	 * @param \WP_REST_Request $request Request.
+	 * @return \WP_REST_Response
+	 */
+	public static function agent_halt( $request ) {
+		$data = (array) $request->get_json_params();
+		$halt = empty( $data['halt'] ) ? false : true;
+		Guard::set_halted( $halt );
+		if ( $halt ) {
+			$next = wp_next_scheduled( Agent::HOOK );
+			if ( $next ) {
+				wp_unschedule_event( $next, Agent::HOOK );
+			}
+		} else {
+			Agent::sync_schedule();
+		}
+		return rest_ensure_response( array( 'ok' => true, 'halted' => $halt ) );
+	}
+
+	/**
+	 * Run history.
+	 *
+	 * @param \WP_REST_Request $request Request.
+	 * @return \WP_REST_Response
+	 */
+	public static function agent_runs( $request ) {
+		$limit = max( 1, min( 100, (int) $request->get_param( 'limit' ) ) );
+		return rest_ensure_response( array( 'ok' => true, 'runs' => Memory::runs( $limit ) ) );
+	}
+
+	/**
+	 * One run with its step ledger.
+	 *
+	 * @param \WP_REST_Request $request Request.
+	 * @return \WP_REST_Response
+	 */
+	public static function agent_run_detail( $request ) {
+		return rest_ensure_response( Agent::run_detail( (int) $request['id'] ) );
+	}
+
+	/**
+	 * Undo one recorded step.
+	 *
+	 * @param \WP_REST_Request $request Request.
+	 * @return \WP_REST_Response
+	 */
+	public static function agent_revert( $request ) {
+		return rest_ensure_response( Agent::revert( (int) $request['step'] ) );
+	}
+
+	/**
+	 * Articles the pipeline produced.
+	 *
+	 * @param \WP_REST_Request $request Request.
+	 * @return \WP_REST_Response
+	 */
+	public static function agent_articles( $request ) {
+		return rest_ensure_response(
+			array(
+				'ok'    => true,
+				'rows'  => Pipeline::ledger( (string) $request->get_param( 'status' ), 40 ),
+				'skill' => Skills::get( 'write_article' ),
+			)
+		);
+	}
+
+	/**
+	 * Write one article on demand.
+	 *
+	 * @param \WP_REST_Request $request Request.
+	 * @return \WP_REST_Response
+	 */
+	public static function agent_article( $request ) {
+		$data    = (array) $request->get_json_params();
+		$keyword = isset( $data['keyword'] ) ? sanitize_text_field( (string) $data['keyword'] ) : '';
+		if ( mb_strlen( $keyword ) < 3 ) {
+			return rest_ensure_response( array( 'ok' => false, 'message' => __( 'کلیدواژه را وارد کنید.', 'hoosh-seo' ) ) );
+		}
+		$out = Pipeline::article(
+			array(
+				'keyword' => $keyword,
+				'intent'  => isset( $data['intent'] ) ? sanitize_key( (string) $data['intent'] ) : '',
+				'words'   => isset( $data['words'] ) ? (int) $data['words'] : 0,
+			),
+			0
+		);
+		return rest_ensure_response( $out );
+	}
+
+	/**
+	 * Content opportunities the agent found.
+	 *
+	 * @param \WP_REST_Request $request Request.
+	 * @return \WP_REST_Response
+	 */
+	public static function agent_opportunities( $request ) {
+		$limit = max( 1, min( 40, (int) $request->get_param( 'limit' ) ) );
+		return rest_ensure_response( array( 'ok' => true, 'rows' => Insight::opportunities( $limit ), 'sources' => Insight::last_sources() ) );
 	}
 
 	/**

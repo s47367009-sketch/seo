@@ -148,6 +148,20 @@ final class Providers {
 				'price_in'   => 0.15,
 				'price_out'  => 0.6,
 			),
+			'gapgpt'      => array(
+				'label'      => __( 'گپ جی‌پی‌تی GapGPT (ایران)', 'hoosh-seo' ),
+				'base'       => 'https://api.gapgpt.app/v1',
+				'path'       => '/chat/completions',
+				'auth'       => 'bearer',
+				'models'     => array( 'gpt-4o', 'gpt-4o-mini', 'gpt-4.1-mini', 'claude-3-5-sonnet', 'gemini-2.0-flash', 'deepseek-chat' ),
+				'json'       => true,
+				'vision'     => true,
+				'price_in'   => 0,
+				'price_out'  => 0,
+				'key_url'    => 'https://gapgpt.app/ai-api',
+				'iranian'    => true,
+				'note'       => __( 'پروکسی ایرانیِ مدل‌های جهانی با پرداخت ریالی؛ سازگار با قالب OpenAI و بدون نیاز به تحریم‌شکن. اگر نشانی سرویس شما فرق دارد، در تنظیمات «نشانی گپ جی‌پی‌تی» را عوض کنید.', 'hoosh-seo' ),
+			),
 			'smartapi'    => array(
 				'label'      => __( 'اسمارت‌ای‌پی‌آی (ایران)', 'hoosh-seo' ),
 				'base'       => 'https://api.smartapi.ir/v1',
@@ -251,6 +265,11 @@ final class Providers {
 		}
 		if ( 'lmstudio' === $driver && $settings->get( 'ai.self_host.lmstudio_url' ) ) {
 			$config['base'] = rtrim( (string) $settings->get( 'ai.self_host.lmstudio_url' ), '/' );
+		}
+		// GapGPT publishes more than one base URL; let the site pick the one
+		// that actually answers instead of shipping a guess.
+		if ( 'gapgpt' === $driver && $settings->get( 'ai.gapgpt_base' ) ) {
+			$config['base'] = rtrim( (string) $settings->get( 'ai.gapgpt_base' ), '/' );
 		}
 
 		return $config;
@@ -407,6 +426,167 @@ final class Providers {
 		unset( $settings );
 
 		return $result;
+	}
+
+	/**
+	 * Fire several completions at once.
+	 *
+	 * Long-form generation is the agent's wall-clock bottleneck: six section
+	 * drafts at four seconds each is twenty-four seconds of doing nothing.
+	 * They are independent, so they go out together over one curl_multi pool
+	 * and come back in roughly the time of the slowest one.
+	 *
+	 * Where curl_multi is unavailable (some shared hosts, CLI builds without
+	 * the extension) this degrades to the serial path — same results, slower,
+	 * never a different code path to maintain.
+	 *
+	 * @param array $calls       List of {messages:array, opts:array}.
+	 * @param int   $concurrency Max simultaneous requests.
+	 * @return array Results in the same order as $calls.
+	 */
+	public static function request_many( $calls, $concurrency = 4 ) {
+		$calls        = array_values( (array) $calls );
+		$concurrency  = max( 1, min( 16, (int) $concurrency ) );
+		$results      = array_fill( 0, count( $calls ), null );
+
+		if ( count( $calls ) < 2 || ! self::can_parallel() ) {
+			foreach ( $calls as $i => $call ) {
+				$results[ $i ] = self::request(
+					isset( $call['messages'] ) ? (array) $call['messages'] : array(),
+					isset( $call['opts'] ) ? (array) $call['opts'] : array()
+				);
+			}
+			return $results;
+		}
+
+		// Prepare every request first so a bad one fails alone, not the batch.
+		$prepared = array();
+		foreach ( $calls as $i => $call ) {
+			$opts    = wp_parse_args(
+				isset( $call['opts'] ) ? (array) $call['opts'] : array(),
+				array(
+					'driver'      => '',
+					'model'       => '',
+					'temperature' => 0.4,
+					'max_tokens'  => 1200,
+					'top_p'       => 1,
+					'json'        => null,
+					'image'       => '',
+					'task'        => 'chat',
+					'job_id'      => 0,
+				)
+			);
+			$config  = self::config( (string) $opts['driver'] );
+			$model   = $opts['model'] ? (string) $opts['model'] : (string) $config['model'];
+			$messages = isset( $call['messages'] ) ? (array) $call['messages'] : array();
+
+			if ( ! $model ) {
+				$results[ $i ] = self::failure( 'model', __( 'مدل انتخاب نشده است.', 'hoosh-seo' ), $config );
+				continue;
+			}
+			if ( 'none' !== $config['auth'] && '' === (string) $config['key'] ) {
+				$results[ $i ] = self::failure( 'key', __( 'کلید API این سرویس خالی است.', 'hoosh-seo' ), $config );
+				continue;
+			}
+			$url = self::endpoint( $config, $model );
+			if ( is_wp_error( $url ) ) {
+				$results[ $i ] = self::failure( 'url', $url->get_error_message(), $config );
+				continue;
+			}
+
+			$prepared[ $i ] = array(
+				'url'     => $url,
+				'headers' => self::headers( $config ),
+				'body'    => wp_json_encode( self::body( $config, $model, $messages, $opts ), JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES ),
+				'timeout' => max( 10, (int) $config['timeout'] ),
+				'config'  => $config,
+				'model'   => $model,
+				'opts'    => $opts,
+			);
+		}
+
+		$queue = array_keys( $prepared );
+		while ( $queue ) {
+			$batch = array_splice( $queue, 0, $concurrency );
+			$pool  = curl_multi_init();
+			$handles = array();
+
+			foreach ( $batch as $i ) {
+				$spec = $prepared[ $i ];
+				$ch   = curl_init();
+				curl_setopt( $ch, CURLOPT_URL, $spec['url'] );
+				curl_setopt( $ch, CURLOPT_POST, true );
+				curl_setopt( $ch, CURLOPT_POSTFIELDS, $spec['body'] );
+				curl_setopt( $ch, CURLOPT_RETURNTRANSFER, true );
+				curl_setopt( $ch, CURLOPT_TIMEOUT, $spec['timeout'] );
+				curl_setopt( $ch, CURLOPT_CONNECTTIMEOUT, 15 );
+				curl_setopt( $ch, CURLOPT_SSL_VERIFYPEER, true );
+				curl_setopt( $ch, CURLOPT_FOLLOWLOCATION, true );
+				curl_setopt( $ch, CURLOPT_MAXREDIRS, 3 );
+
+				$lines = array();
+				foreach ( (array) $spec['headers'] as $name => $value ) {
+					$lines[] = is_int( $name ) ? (string) $value : $name . ': ' . $value;
+				}
+				curl_setopt( $ch, CURLOPT_HTTPHEADER, $lines );
+
+				curl_multi_add_handle( $pool, $ch );
+				$handles[ $i ] = $ch;
+			}
+
+			do {
+				$status = curl_multi_exec( $pool, $active );
+				if ( $active ) {
+					curl_multi_select( $pool, 1.0 );
+				}
+			} while ( $active && CURLM_OK === $status );
+
+			foreach ( $handles as $i => $ch ) {
+				$spec   = $prepared[ $i ];
+				$raw    = curl_multi_getcontent( $ch );
+				$code   = (int) curl_getinfo( $ch, CURLINFO_HTTP_CODE );
+				$err    = curl_error( $ch );
+				curl_multi_remove_handle( $pool, $ch );
+				curl_close( $ch );
+
+				$decoded = json_decode( (string) $raw, true );
+				$normalised = self::normalize(
+					$spec['config'],
+					array(
+						'ok'      => $code >= 200 && $code < 400 && '' === $err,
+						'code'    => $code,
+						'body'    => (string) $raw,
+						'json'    => is_array( $decoded ) ? $decoded : array(),
+						'error'   => $err ? $err : ( $code >= 400 ? 'HTTP ' . $code : '' ),
+						'headers' => array(),
+					),
+					$spec['model'],
+					(string) $spec['opts']['task']
+				);
+				$normalised['driver']   = $spec['config']['driver'];
+				$normalised['model']    = $spec['model'];
+				$normalised['job_id']   = (int) $spec['opts']['job_id'];
+				$normalised['task']     = (string) $spec['opts']['task'];
+				$normalised['parallel'] = true;
+				$results[ $i ]          = $normalised;
+			}
+
+			curl_multi_close( $pool );
+		}
+
+		return $results;
+	}
+
+	/**
+	 * Is a concurrent HTTP pool actually usable here?
+	 *
+	 * @return bool
+	 */
+	protected static function can_parallel() {
+		return function_exists( 'curl_multi_init' )
+			&& function_exists( 'curl_multi_exec' )
+			&& function_exists( 'curl_multi_getcontent' )
+			&& defined( 'CURLM_OK' );
 	}
 
 	/**

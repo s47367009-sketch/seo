@@ -103,7 +103,7 @@ final class Analytics {
 			),
 			'alerts'    => (array) $settings->get( 'analytics.alerts', array() ),
 			'imported'  => array(
-				'gsc_rows' => count( (array) get_transient( 'hoosh_gsc_import' ) ),
+				'gsc_rows' => count( self::cached_array( 'hoosh_gsc_import' ) ),
 			),
 			'advanced'  => array(
 				'bing_key' => (bool) $settings->get( 'advanced.bing_key', '' ),
@@ -345,12 +345,57 @@ final class Analytics {
 	}
 
 	/**
+	 * Read a transient that is expected to hold an array.
+	 *
+	 * `(array) get_transient( ... )` is not safe here: casting the boolean
+	 * false produces array( false ), so a cold cache looks like one row of
+	 * nonsense instead of no rows at all.
+	 *
+	 * @param string $key Transient key.
+	 * @return array
+	 */
+	protected static function cached_array( $key ) {
+		$value = get_transient( $key );
+		return is_array( $value ) ? $value : array();
+	}
+
+	/**
+	 * Service-account access token for an arbitrary Google scope.
+	 *
+	 * The Indexing API needs a different scope than Search Console, but the
+	 * signing is identical, so it borrows this instead of carrying a second
+	 * copy of the JWT code.
+	 *
+	 * @param string $scope    Space-separated Google scopes.
+	 * @param string $which    Credential slot (gsc|ga4).
+	 * @param int    $cache_for Seconds to cache the token.
+	 * @return string Access token, or '' when not configured.
+	 */
+	public static function service_access_token( $scope, $which = 'gsc', $cache_for = 3000 ) {
+		$credentials = (string) \hoosh_seo()->settings->get( 'analytics.' . $which . '.credentials', '' );
+		if ( ! $credentials ) {
+			return '';
+		}
+		$cache_key = 'hoosh_gtoken_' . md5( $which . '|' . $scope );
+		$cached    = get_transient( $cache_key );
+		if ( is_string( $cached ) && '' !== $cached ) {
+			return $cached;
+		}
+		$token = self::service_token( $credentials, (string) $scope );
+		if ( $token ) {
+			set_transient( $cache_key, $token, max( 60, (int) $cache_for ) );
+		}
+		return (string) $token;
+	}
+
+	/**
 	 * Sign a service-account JWT and swap it for an access token.
 	 *
 	 * @param string $credentials JSON blob.
+	 * @param string $scope       Optional scope override.
 	 * @return string
 	 */
-	protected static function service_token( $credentials ) {
+	protected static function service_token( $credentials, $scope = '' ) {
 		$json = json_decode( (string) $credentials, true );
 		if ( ! is_array( $json ) || empty( $json['private_key'] ) || empty( $json['client_email'] ) || empty( $json['token_uri'] ) ) {
 			return '';
@@ -358,13 +403,16 @@ final class Analytics {
 		if ( ! function_exists( 'openssl_sign' ) ) {
 			return '';
 		}
+		if ( '' === $scope ) {
+			$scope = 'https://www.googleapis.com/auth/webmasters.readonly https://www.googleapis.com/auth/analytics.readonly';
+		}
 		$now   = time();
 		$header = self::b64( wp_json_encode( array( 'alg' => 'RS256', 'typ' => 'JWT' ) ) );
 		$claim  = self::b64(
 			wp_json_encode(
 				array(
 					'iss'   => (string) $json['client_email'],
-					'scope' => 'https://www.googleapis.com/auth/webmasters.readonly https://www.googleapis.com/auth/analytics.readonly',
+					'scope' => (string) $scope,
 					'aud'   => (string) $json['token_uri'],
 					'exp'   => $now + 3500,
 					'iat'   => $now,
@@ -912,14 +960,14 @@ final class Analytics {
 	 * @return array
 	 */
 	protected static function from_import( $args ) {
-		$daily = (array) get_transient( 'hoosh_gsc_import' );
+		$daily = self::cached_array( 'hoosh_gsc_import' );
 		if ( ! $daily ) {
 			return array();
 		}
 		$dims = (array) ( $args['dimensions'] ?? array( 'date' ) );
 		if ( array( 'date' ) !== $dims ) {
 			$which = in_array( 'query', $dims, true ) ? 'hoosh_import_queries' : 'hoosh_import_pages';
-			$rows  = (array) get_transient( $which );
+			$rows  = self::cached_array( $which );
 			$limit = (int) ( $args['rowLimit'] ?? 25 );
 			return array_map(
 				static function ( $row ) {

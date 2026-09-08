@@ -52,6 +52,10 @@ class Cron {
 		self::schedule( self::HOURLY, 'hoosh_hourly' );
 		self::schedule( self::BATCH, 'hoosh_10min' );
 		self::schedule( self::WEEKLY, 'weekly' );
+
+		// The agent owns its own cadence, because it can be switched off
+		// independently of the other automation jobs.
+		Agent\Agent::sync_schedule();
 	}
 
 	/**
@@ -70,7 +74,7 @@ class Cron {
 	 * Remove all plugin events.
 	 */
 	public static function clear_all() {
-		foreach ( array( self::DAILY, self::HOURLY, self::WEEKLY, self::BATCH ) as $hook ) {
+		foreach ( array( self::DAILY, self::HOURLY, self::WEEKLY, self::BATCH, Agent\Agent::HOOK ) as $hook ) {
 			$timestamp = wp_next_scheduled( $hook );
 			if ( $timestamp ) {
 				wp_unschedule_event( $timestamp, $hook );

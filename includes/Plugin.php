@@ -79,6 +79,7 @@ final class Plugin {
 		'Modules\Migration',
 		'Modules\Breadcrumbs',
 		'AI\Gateway',
+		'Agent\Agent',
 		'App',
 		'Editor',
 		'Rest',

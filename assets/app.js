@@ -4120,6 +4120,21 @@ var HS = (function () {
 					});
 					keyHost.appendChild(g);
 				}
+				// GapGPT documents more than one base URL, so the endpoint is a
+				// setting rather than something baked in. Only show it when it
+				// is the provider actually in use.
+				var gapGptWrap = h('div');
+				function gapGptBase() {
+					var meta = (C.ai && C.ai.providers && C.ai.providers.gapgpt) || {};
+					var field = { key: 'gapgpt_base', label: 'نشانی گپ جی‌پی‌تی', type: 'text', help: 'پیش‌فرض ' + (meta.base || 'https://api.gapgpt.app/v1') + ' است. اگر سرویس شما نشانی دیگری می‌دهد، همان را بنویسید (بدون /chat/completions).' };
+					var inp = HS.input(field, HS.sget('ai.gapgpt_base', '') || '', function (v) { HS.markDirty('ai.gapgpt_base', String(v).trim()); });
+					gapGptWrap.appendChild(HS.fieldWrap(field, inp));
+					syncGapGpt();
+					return gapGptWrap;
+				}
+				function syncGapGpt() {
+					gapGptWrap.style.display = (driver === 'gapgpt') ? '' : 'none';
+				}
 				function test(drv) {
 					return HS.post('ai/test', { driver: drv || driver }).then(function (res) {
 						HS.toast((res && res.ok ? ('✓ ' + (res.reply || res.message || 'پاسخ گرفتیم')) : ((res && res.message) || 'پاسخی نگرفتیم')), res && res.ok ? 'ok' : 'warn', { ms: 4000 });
@@ -4133,10 +4148,11 @@ var HS = (function () {
 					]
 				}, [
 					h('div', { class: 'hs-form' }, [
-						HS.fieldWrap({ key: 'driver', label: 'سرویس', help: 'پشتیبانان متنوع: ابری، محلی و سازگار با OpenAI.' }, HS.select(arrToOpts(OPTIONS['ai.driver']), driver, function (v) { driver = v; HS.markDirty('ai.driver', v); })),
+						HS.fieldWrap({ key: 'driver', label: 'سرویس', help: 'پشتیبانان متنوع: ابری، محلی و سازگار با OpenAI.' }, HS.select(arrToOpts(OPTIONS['ai.driver']), driver, function (v) { driver = v; HS.markDirty('ai.driver', v); syncGapGpt(); })),
 						HS.fieldWrap({ key: 'model', label: 'مدل' }, (function () { var i = h('input', { class: 'hs-input', value: HS.sget('ai.model', '') || ov.model || '' }); i.addEventListener('change', function () { HS.markDirty('ai.model', i.value); }); return i; })())
 					]),
 					keyHost,
+					gapGptBase(),
 					HS.kpis([
 						{ label: 'پیکربندی', value: ov.configured ? 'آماده' : 'ناتمام' },
 						{ label: 'هزینه این ماه', value: '$' + num(ov.spend && ov.spend.cost || ov.spend || 0, 2) },
@@ -4819,6 +4835,438 @@ var HS = (function () {
 			}, function (e) { host.innerHTML = ''; host.appendChild(HS.note('bad', 'اسکیما خوانده نشد', e.message)); });
 		}
 	});
+})(HS);
+
+/* =================== mission control: autonomous agent =================== */
+(function (HS) {
+	'use strict';
+	var h = HS.h, num = HS.num, trunc = HS.trunc, esc = HS.esc;
+
+	var RISK = { low: 'کم', medium: 'متوسط', high: 'بالا' };
+	var RISK_KIND = { low: 'ok', medium: 'warn', high: 'bad' };
+	var STATUS = { done: 'انجام شد', review: 'در انتظار تأیید', skipped: 'رد شد', failed: 'ناموفق', planned: 'برنامه‌ریزی شده' };
+	var STATUS_KIND = { done: 'ok', review: 'warn', skipped: null, failed: 'bad', planned: null };
+
+	function chip(text, kind) { return HS.chip(text, kind || null, { dot: false }); }
+
+	function ago(ts) {
+		if (!ts) { return '—'; }
+		var d = (Date.now() / 1000) - parseInt(ts, 10);
+		if (d < 60) { return 'همین حالا'; }
+		if (d < 3600) { return num(Math.round(d / 60)) + ' دقیقه پیش'; }
+		if (d < 86400) { return num(Math.round(d / 3600)) + ' ساعت پیش'; }
+		return num(Math.round(d / 86400)) + ' روز پیش';
+	}
+
+	function scoreRing(score) {
+		var v = Math.max(0, Math.min(100, parseFloat(score) || 0));
+		var kind = v >= 75 ? 'ok' : (v >= 50 ? 'warn' : 'bad');
+		var box = h('div', { class: 'hs-scorebox hs-scorebox--' + kind });
+		box.appendChild(h('strong', { text: num(Math.round(v)) }));
+		box.appendChild(h('span', { text: 'از ۱۰۰' }));
+		box.appendChild(h('div', { class: 'hs-scorebox__bar' }, [h('i', { style: { width: v + '%' } })]));
+		return box;
+	}
+
+	/* ---------- run ledger drawer ---------- */
+	function openRun(id) {
+		var body = h('div', {}, [HS.skeleton(3)]);
+		HS.drawer({ title: 'جزئیات اجرا #' + num(id), body: body });
+		HS.get('agent/run/' + num(id), {}, { force: true }).then(function (res) {
+			body.innerHTML = '';
+			if (!res || !res.ok) {
+				body.appendChild(HS.note('bad', 'خوانده نشد', (res && res.message) || ''));
+				return;
+			}
+			var run = res.run || {};
+			var steps = res.steps || [];
+
+			body.appendChild(HS.kpis([
+				{ label: 'وضعیت', value: run.status || '—' },
+				{ label: 'گام‌ها', value: num(run.steps_done || 0) + ' از ' + num(run.steps_total || 0) },
+				{ label: 'هزینه', value: '$' + num(parseFloat(run.cost_usd || 0).toFixed(4)) },
+				{ label: 'امتیاز', value: num(run.score_before || 0) + ' ← ' + num(run.score_after || 0) }
+			]));
+			if (run.summary) { body.appendChild(HS.note(null, run.summary)); }
+
+			var plan = run.plan;
+			if (typeof plan === 'string') { try { plan = JSON.parse(plan); } catch (e) { plan = null; } }
+			if (plan && plan.rationale && plan.rationale.length) {
+				body.appendChild(HS.card({ title: 'چرا این کارها', icon: 'sparkle' }, [
+					h('ul', { class: 'hs-list' }, plan.rationale.map(function (r) { return h('li', { text: r }); }))
+				]));
+			}
+
+			body.appendChild(HS.card({ title: 'گام‌ها', icon: 'check-list', flush: true }, [
+				HS.table({
+					columns: [
+						{ key: 'seq', label: '#', width: '48px', render: function (r) { return num(r.seq); } },
+						{ key: 'skill', label: 'مهارت', render: function (r) { return h('span', { text: r.skill || '' }); } },
+						{ key: 'title', label: 'کار', render: function (r) { return h('span', { text: r.title || '' }); } },
+						{ key: 'status', label: 'وضعیت', width: '120px', render: function (r) { return chip(STATUS[r.status] || r.status, STATUS_KIND[r.status]); } },
+						{ key: 'ms', label: 'زمان', width: '80px', render: function (r) { return num(r.ms || 0) + 'ms'; } },
+						{ key: 'act', label: '', width: '90px', render: function (r) {
+							if (String(r.reverted) === '1') { return chip('بازگشت داده شد'); }
+							return HS.btn('بازگشت', { sm: true, kind: 'ghost', run: function () {
+								return HS.post('agent/revert/' + num(r.id), {}).then(function () {
+									HS.toast('بازگردانده شد', 'ok'); openRun(id);
+								}, HS.fail);
+							} });
+						} }
+					],
+					rows: steps,
+					rowKey: 'id',
+					empty: { title: 'گامی ثبت نشده' }
+				})
+			]));
+		}, function (e) { body.innerHTML = ''; body.appendChild(HS.note('bad', 'خطا', e.message)); });
+	}
+
+	HS.view('agent', {
+		title: 'ایجنت خودکار سئو',
+		sub: 'سایت را می‌سنجد، تصمیم می‌گیرد، اصلاح می‌کند و اگر ایرادی نبود محتوا می‌سازد',
+		render: function (host) {
+			host.appendChild(HS.skeleton(4));
+			HS.get('agent/status', {}, { force: true }).then(function (st) {
+				host.innerHTML = '';
+				if (!st) { host.appendChild(HS.note('bad', 'ایجنت خوانده نشد')); return; }
+
+				var totals = st.totals || {};
+				var limits = st.limits || {};
+				var gate = st.can_run || {};
+
+				/* ---- header ---- */
+				host.appendChild(h('div', { class: 'hs-row hs-row--between hs-agenthead' }, [
+					h('div', { class: 'hs-row' }, [
+						scoreRing((st.totals && st.totals.last_score) || 0),
+						h('div', {}, [
+							h('h2', { class: 'hs-agenthead__title', text: st.enabled ? (st.halted ? 'متوقف شده' : 'آمادهٔ کار') : 'خاموش' }),
+							h('p', { class: 'hs-muted', text: st.enabled
+								? ('سطح خودمختاری: ' + ((st.autonomy_levels || []).filter(function (a) { return a.id === st.autonomy; })[0] || {}).label)
+								: 'برای شروع، ایجنت را روشن کنید و یک سرویس هوش مصنوعی تنظیم کنید.' })
+						])
+					]),
+					h('div', { class: 'hs-row' }, [
+						HS.btn('اجرای آزمایشی', { sm: true, icon: 'eye', title: 'بدون تغییر چیزی، فقط می‌گوید چه می‌کرد', run: function () {
+							return HS.post('agent/run', { dry_run: true }).then(function (res) {
+								var n = (res && res.plan && res.plan.count) || 0;
+								HS.toast('برنامه: ' + num(n) + ' گام (چیزی تغییر نکرد)', 'ok');
+								showPlan(res);
+							}, HS.fail);
+						} }),
+						HS.btn('اجرای واقعی', { kind: 'primary', sm: true, icon: 'play', run: function () {
+							HS.confirmBox('ایجنت الان کار کند؟', 'طبق سطح خودمختاری فعلی، تغییرات ممکن است مستقیم اعمال شوند. همهٔ گام‌ها در دفتر کار ثبت می‌شوند و قابل بازگشت‌اند.', function () {
+								HS.toast('ایجنت شروع به کار کرد…', 'ok');
+								HS.post('agent/run', {}).then(function (res) {
+									HS.toast((res && res.summary) || 'تمام شد', res && res.ok ? 'ok' : 'warn');
+									HS.cacheClear('agent'); HS.renderRoute();
+								}, HS.fail);
+							});
+						} }),
+						HS.btn(st.halted ? 'از سرگیری' : 'توقف اضطراری', { sm: true, kind: st.halted ? 'primary' : 'ghost', icon: st.halted ? 'play' : 'warning', run: function () {
+							return HS.post('agent/halt', { halt: !st.halted }).then(function () {
+								HS.toast(st.halted ? 'ایجنت از سر گرفته شد' : 'ایجنت متوقف شد', 'ok');
+								HS.cacheClear('agent'); HS.renderRoute();
+							}, HS.fail);
+						} })
+					])
+				]));
+
+				if (st.halted) { host.appendChild(HS.note('bad', 'کلید توقف اضطراری فعال است', 'تا وقتی آن را برنگردانید هیچ اجرای خودکاری انجام نمی‌شود.')); }
+				else if (st.enabled && !gate.allowed) { host.appendChild(HS.note('warn', 'آمادهٔ اجرا نیست', gate.why || '')); }
+				else if (st.enabled && !st.ai_ready) { host.appendChild(HS.note('bad', 'هوش مصنوعی تنظیم نشده', 'در بخش «تنظیمات هوش مصنوعی» یک سرویس و کلید وارد کنید.')); }
+
+				/* ---- KPIs ---- */
+				host.appendChild(HS.card({ title: 'کارنامه', icon: 'gauge' }, [
+					HS.kpis([
+						{ label: 'اجراها', value: num(totals.runs || 0) },
+						{ label: 'کارهای انجام‌شده', value: num(totals.wins || 0), hint: 'از آغاز نصب' },
+						{ label: 'گام‌های ثبت‌شده', value: num(totals.steps || 0) },
+						{ label: 'در انتظار تأیید', value: num(totals.review || 0) },
+						{ label: 'هزینهٔ هوش مصنوعی', value: '$' + num(parseFloat(totals.cost_usd || 0).toFixed(3)) },
+						{ label: 'اجرای بعدی', value: st.next_run ? ago(st.next_run).replace('پیش', '') : '—', hint: 'برنامه: ' + (st.schedule || '—') }
+					])
+				]));
+
+				/* ---- settings ---- */
+				var auto = h('div', { class: 'hs-agentauto' });
+				(st.autonomy_levels || []).forEach(function (a) {
+					var on = a.id === st.autonomy;
+					var card = h('button', { type: 'button', class: 'hs-autocard' + (on ? ' is-on' : '') }, [
+						h('strong', { text: a.label }),
+						h('span', { text: a.about })
+					]);
+					card.addEventListener('click', function () {
+						HS.markDirty('agent.autonomy', a.id);
+						HS.flushDirty().then(function () { HS.toast('سطح خودمختاری: ' + a.label, 'ok'); HS.cacheClear('agent'); HS.renderRoute(); }, HS.fail);
+					});
+					auto.appendChild(card);
+				});
+
+				host.appendChild(HS.card({
+					title: 'کنترل', icon: 'robot',
+					actions: [
+						HS.switchEl(!!st.enabled, function (v) {
+							HS.markDirty('agent.enabled', v);
+							return HS.flushDirty().then(function () { HS.toast(v ? 'ایجنت روشن شد' : 'ایجنت خاموش شد', 'ok'); HS.cacheClear('agent'); HS.renderRoute(); }, HS.fail);
+						}, { title: 'روشن/خاموش' })
+					]
+				}, [
+					auto,
+					h('div', { class: 'hs-row hs-row--wrap' }, [
+						h('label', { class: 'hs-field' }, [
+							h('span', { text: 'برنامهٔ اجرا' }),
+							HS.segmented([{ value: 'hourly', label: 'هر ساعت' }, { value: 'daily', label: 'هر روز' }, { value: 'weekly', label: 'هر هفته' }, { value: 'off', label: 'خاموش' }], st.schedule, function (v) { HS.markDirty('agent.schedule', v); HS.flushDirty().then(function () { HS.cacheClear('agent'); HS.renderRoute(); }); })
+						]),
+						h('label', { class: 'hs-field' }, [
+							h('span', { text: 'نتیجهٔ مقاله‌ها' }),
+							HS.segmented([{ value: 'draft', label: 'پیش‌نویس' }, { value: 'review', label: 'با تأیید من' }, { value: 'publish', label: 'انتشار مستقیم' }], limits.publish, function (v) { HS.markDirty('agent.publish', v); return HS.flushDirty(); })
+						]),
+						h('label', { class: 'hs-field' }, [
+							h('span', { text: 'سقف هزینه در هر اجرا (دلار)' }),
+							HS.input({ key: 'budget', type: 'number', step: '0.1', min: '0' }, limits.budget_usd || 0, function (v) { HS.markDirty('agent.budget_usd', parseFloat(v) || 0); })
+						]),
+						h('label', { class: 'hs-field' }, [
+							h('span', { text: 'حداکثر گام در هر اجرا' }),
+							HS.input({ key: 'max_steps', type: 'number', step: '1', min: '1' }, limits.max_steps || 25, function (v) { HS.markDirty('agent.max_steps', parseInt(v, 10) || 1); })
+						]),
+						h('label', { class: 'hs-field' }, [
+							h('span', { text: 'درخواست‌های موازی' }),
+							HS.input({ key: 'parallel', type: 'number', step: '1', min: '1', max: '12' }, limits.parallel || 4, function (v) { HS.markDirty('agent.parallel', parseInt(v, 10) || 1); })
+						]),
+						HS.btn('ذخیره', { sm: true, icon: 'check', run: function () { return HS.flushDirty(); } })
+					]),
+					HS.note(null, 'درخواست‌های موازی فقط برای بخش‌های مستقل یک مقاله به کار می‌رود؛ هرچه بیشتر، سریع‌تر — ولی ممکن است سرویس هوش مصنوعی شما را محدود کند.', '')
+				]));
+
+				/* ---- skills ---- */
+				var grid = h('div', { class: 'hs-cols hs-cols--3' });
+				(st.skills || []).forEach(function (sk) {
+					var c = h('article', { class: 'hs-modcard' + (sk.enabled ? '' : ' is-off') });
+					c.appendChild(h('h3', { class: 'hs-modcard__title', text: sk.label }));
+					c.appendChild(h('p', { class: 'hs-modcard__desc', text: sk.about || '' }));
+					var foot = h('div', { class: 'hs-modcard__foot' }, [
+						chip('خطر: ' + (RISK[sk.risk] || sk.risk), RISK_KIND[sk.risk]),
+						sk.cost ? chip('هزینهٔ AI', 'warn') : null,
+						h('div', { class: 'hs-right' }, [HS.switchEl(!!sk.enabled, function (v) {
+							var cur = HS.sget('agent.skills', {}) || {};
+							var next = Object.assign({}, cur);
+							next[sk.id] = !!v;
+							HS.markDirty('agent.skills', next);
+							return HS.flushDirty();
+						})])
+					]);
+					c.appendChild(foot);
+					grid.appendChild(c);
+				});
+				host.appendChild(HS.card({ title: 'مهارت‌ها', icon: 'chip', flush: true }, [grid]));
+
+				/* ---- diagnosis ---- */
+				var diagHost = h('div', {});
+				host.appendChild(HS.card({
+					title: 'تحلیل زندهٔ سایت', icon: 'stethoscope',
+					actions: [HS.btn('سنجش دوباره', { sm: true, icon: 'refresh', run: function () {
+						diagHost.innerHTML = ''; diagHost.appendChild(HS.skeleton(3));
+						HS.get('agent/diagnose', {}, { force: true }).then(function (d) { renderDiag(diagHost, d); }, HS.fail);
+					} })]
+				}, [diagHost]));
+				diagHost.appendChild(HS.skeleton(3));
+				HS.get('agent/diagnose', {}, { force: true }).then(function (d) { renderDiag(diagHost, d); }, function () { diagHost.innerHTML = ''; });
+
+				/* ---- opportunities + writer ---- */
+				var oppHost = h('div', {});
+				host.appendChild(HS.card({
+					title: 'فرصت‌های محتوا', icon: 'sparkle',
+					actions: [HS.btn('نوشتن مقالهٔ دلخواه', { sm: true, kind: 'primary', icon: 'edit', run: function () { writeArticle(); } })]
+				}, [oppHost]));
+				oppHost.appendChild(HS.skeleton(2));
+				HS.get('agent/opportunities', { limit: 12 }, { force: true }).then(function (o) {
+					oppHost.innerHTML = '';
+					var rows = (o && o.rows) || [];
+					if (!rows.length) {
+						oppHost.appendChild(HS.note(null, 'فرصت بی‌پوششی پیدا نشد', 'برای نتیجهٔ بهتر سرچ کنسول را وصل کنید یا در «تحقیق کلمات کلیدی» کلمه اضافه کنید.'));
+						return;
+					}
+					oppHost.appendChild(HS.table({
+						columns: [
+							{ key: 'keyword', label: 'کلیدواژه', render: function (r) { return h('strong', { text: r.keyword }); } },
+							{ key: 'intent', label: 'نیت', width: '110px', render: function (r) { return chip(intentLabel(r.intent)); } },
+							{ key: 'volume', label: 'تقاضا', width: '90px', render: function (r) { return num(r.volume || 0); } },
+							{ key: 'difficulty', label: 'سختی', width: '80px', render: function (r) { return num(Math.round(r.difficulty || 0)); } },
+							{ key: 'words', label: 'طول پیشنهادی', width: '110px', render: function (r) { return num(r.words || 0) + ' کلمه'; } },
+							{ key: 'score', label: 'امتیاز', width: '80px', render: function (r) { return chip(num(r.score || 0), (r.score || 0) > 80 ? 'ok' : null); } },
+							{ key: 'src', label: 'منبع', width: '120px', render: function (r) { return h('span', { class: 'hs-muted hs-small', text: sourceLabel(r.source) }); } },
+							{ key: 'act', label: '', width: '90px', render: function (r) {
+								return HS.btn('بنویس', { sm: true, kind: 'ghost', run: function () { return writeArticle(r.keyword); } });
+							} }
+						],
+						rows: rows,
+						empty: { title: 'چیزی نیست' }
+					}));
+				}, function () { oppHost.innerHTML = ''; });
+
+				/* ---- articles ---- */
+				var artHost = h('div', {});
+				host.appendChild(HS.card({ title: 'مقاله‌های تولیدشده', icon: 'document' }, [artHost]));
+				artHost.appendChild(HS.skeleton(2));
+				HS.get('agent/articles', {}, { force: true }).then(function (a) {
+					artHost.innerHTML = '';
+					var rows = (a && a.rows) || [];
+					if (!rows.length) {
+						artHost.appendChild(HS.note(null, 'هنوز مقاله‌ای نوشته نشده', 'مهارت «نگارش مقالهٔ تازه» را روشن کنید یا دستی یک مقاله بسازید.'));
+						return;
+					}
+					artHost.appendChild(HS.table({
+						columns: [
+							{ key: 'keyword', label: 'کلیدواژه', render: function (r) { return h('strong', { text: r.keyword }); } },
+							{ key: 'title', label: 'عنوان', render: function (r) { return h('span', { text: r.title || '—' }); } },
+							{ key: 'words', label: 'کلمه', width: '80px', render: function (r) { return num(r.words || 0); } },
+							{ key: 'quality', label: 'کیفیت', width: '80px', render: function (r) { return chip(num(Math.round(r.quality || 0)), (r.quality || 0) >= 70 ? 'ok' : 'warn'); } },
+							{ key: 'status', label: 'وضعیت', width: '110px', render: function (r) { return chip(articleStatus(r.status), r.status === 'publish' ? 'ok' : (r.status === 'rejected' || r.status === 'failed' ? 'bad' : 'warn')); } },
+							{ key: 'link', label: '', width: '80px', render: function (r) {
+								if (!r.post_id || String(r.post_id) === '0') { return null; }
+								var u = (HS.C && HS.C.site && HS.C.site.admin) ? (HS.C.site.admin + 'post.php?post=' + num(r.post_id) + '&action=edit') : '#';
+								return h('a', { class: 'hs-btn hs-btn--sm hs-btn--ghost', href: u, text: 'ویرایش' });
+							} }
+						],
+						rows: rows,
+						rowKey: 'id',
+						empty: { title: 'چیزی نیست' }
+					}));
+				}, function () { artHost.innerHTML = ''; });
+
+				/* ---- history ---- */
+				host.appendChild(HS.card({ title: 'دفتر کار', icon: 'report', flush: true }, [
+					HS.table({
+						columns: [
+							{ key: 'id', label: '#', width: '56px', render: function (r) { return num(r.id); } },
+							{ key: 'created_at', label: 'زمان', width: '150px', render: function (r) { return h('span', { text: (r.created_at || '').replace('T', ' ') }); } },
+							{ key: 'goal', label: 'هدف', render: function (r) { return h('span', { text: r.goal || '' }); } },
+							{ key: 'status', label: 'وضعیت', width: '100px', render: function (r) { return chip(runStatus(r.status), r.status === 'done' ? 'ok' : (r.status === 'failed' ? 'bad' : 'warn')); } },
+							{ key: 'steps_done', label: 'گام', width: '70px', render: function (r) { return num(r.steps_done || 0) + '/' + num(r.steps_total || 0); } },
+							{ key: 'score', label: 'امتیاز', width: '100px', render: function (r) {
+								var b = parseFloat(r.score_before || 0), a = parseFloat(r.score_after || 0);
+								if (!b && !a) { return '—'; }
+								var d = a - b;
+								return h('span', { text: num(Math.round(b)) + ' → ' + num(Math.round(a)) + (d ? ' (' + (d > 0 ? '+' : '') + num(Math.round(d * 10) / 10) + ')' : '') });
+							} },
+							{ key: 'summary', label: 'خلاصه', render: function (r) { return h('span', { class: 'hs-muted', text: trunc(r.summary || '', 60) }); } },
+							{ key: 'act', label: '', width: '80px', render: function (r) { return HS.btn('جزئیات', { sm: true, kind: 'ghost', run: function () { openRun(r.id); } }); } }
+						],
+						rows: st.runs || [],
+						rowKey: 'id',
+						empty: { title: 'هنوز اجرایی ثبت نشده', body: 'با «اجرای آزمایشی» شروع کنید تا ببینید ایجنت چه می‌کرد.' }
+					})
+				]));
+
+				function renderDiag(el, d) {
+					el.innerHTML = '';
+					if (!d) { return; }
+					var findings = d.findings || [];
+					el.appendChild(h('div', { class: 'hs-row' }, [
+						scoreRing(d.score || 0),
+						h('div', { class: 'hs-muted' }, [
+							h('div', { text: 'منابع داده: ' + ((d.sources || []).map(sourceLabel).join('، ') || 'فقط دادهٔ داخلی سایت') }),
+							h('div', { text: num(findings.length) + ' مورد پیدا شد' })
+						])
+					]));
+					if (!findings.length) {
+						el.appendChild(HS.note('ok', 'سایت سالم است', 'ایراد فنی مهمی پیدا نشد. ایجنت در این حالت بودجهٔ خود را صرف تولید محتوا می‌کند.'));
+						return;
+					}
+					var list = h('div', { class: 'hs-findings' });
+					findings.forEach(function (f) {
+						list.appendChild(h('div', { class: 'hs-finding hs-finding--' + (f.severity || 'low') }, [
+							h('span', { class: 'hs-finding__sev', text: sevLabel(f.severity) }),
+							h('div', { class: 'hs-finding__body' }, [
+								h('p', { text: f.message }),
+								h('span', { class: 'hs-muted hs-small', text: 'مهارت پیشنهادی: ' + skillLabel(st, f.skill) })
+							]),
+							h('div', { class: 'hs-finding__impact' }, [
+								h('span', { text: num(Math.round(f.impact || 0)) }),
+								h('small', { text: 'اثر' })
+							])
+						]));
+					});
+					el.appendChild(list);
+				}
+			}, function (e) {
+				host.innerHTML = '';
+				host.appendChild(HS.note('bad', 'ایجنت بالا نیامد', e.message));
+			});
+		}
+	});
+
+	function showPlan(res) {
+		var plan = (res && res.plan) || {};
+		var steps = (plan.steps) || [];
+		var body = h('div', {});
+		if (plan.rationale && plan.rationale.length) {
+			body.appendChild(HS.note(null, 'استدلال', plan.rationale.join(' — ')));
+		}
+		if (!steps.length) {
+			body.appendChild(HS.note('ok', 'کاری نبود', 'ایراد فنی و فرصت محتوایی تازه‌ای پیدا نشد.'));
+		} else {
+			body.appendChild(HS.table({
+				columns: [
+					{ key: 'seq', label: '#', width: '48px', render: function (r) { return num(r.seq); } },
+					{ key: 'skill', label: 'مهارت', width: '140px', render: function (r) { return h('strong', { text: r.skill }); } },
+					{ key: 'why', label: 'چرا', render: function (r) { return h('span', { text: r.why || '' }); } },
+					{ key: 'severity', label: 'اهمیت', width: '90px', render: function (r) { return chip(sevLabel(r.severity), r.severity === 'critical' ? 'bad' : (r.severity === 'high' ? 'warn' : null)); } }
+				],
+				rows: steps,
+				empty: { title: 'خالی' }
+			}));
+		}
+		HS.modal({ title: 'برنامهٔ اجرا (بدون تغییر)', body: body });
+	}
+
+	function writeArticle(keyword) {
+		var kw = { value: keyword || '' };
+		var input = HS.input({ key: 'agent_kw', placeholder: 'مثلاً: خرید لپ تاپ دانشجویی' }, keyword || '', function (v) { kw.value = v; });
+		var body = h('div', {}, [
+			HS.note(null, 'مقالهٔ کامل با ساختار، لینک داخلی، اسکیمای پرسش‌های متداول و متای بهینه ساخته می‌شود.', 'چند دقیقه طول می‌کشد چون بخش‌ها جداگانه نوشته می‌شوند.'),
+			h('label', { class: 'hs-field' }, [h('span', { text: 'کلیدواژهٔ هدف' }), input])
+		]);
+		HS.modal({
+			title: 'نگارش مقاله',
+			body: body,
+			actions: [{ label: 'شروع نگارش', kind: 'primary', keepOpen: true, run: function (el, o) {
+				var v = String(kw.value || '').trim();
+				if (v.length < 3) { HS.toast('کلیدواژه را وارد کنید', 'warn'); return; }
+				HS.toast('نگارش شروع شد…', 'ok');
+				o.close();
+				HS.post('agent/article', { keyword: v }).then(function (res) {
+					if (res && res.ok) {
+						HS.toast('مقاله ساخته شد: ' + (res.title || ''), 'ok');
+						HS.cacheClear('agent'); HS.renderRoute();
+					} else {
+						HS.toast((res && res.message) || 'ناموفق بود', 'bad');
+					}
+				}, function (e) { HS.toast(e.message || 'خطا', 'bad'); });
+			} }]
+		});
+	}
+
+	function skillLabel(st, id) {
+		var found = (st.skills || []).filter(function (s) { return s.id === id; })[0];
+		return found ? found.label : (id || '—');
+	}
+	function sevLabel(s) {
+		return { critical: 'بحرانی', high: 'مهم', medium: 'متوسط', low: 'کم' }[s] || (s || '—');
+	}
+	function intentLabel(i) {
+		return { transactional: 'خرید', commercial: 'مقایسه', informational: 'آموزشی', navigational: 'یافتن سایت' }[i] || (i || '—');
+	}
+	function sourceLabel(s) {
+		return { research: 'تحقیق کلمات', 'search-console': 'سرچ کنسول', 'rank-tracker': 'ردیاب رتبه', keywords: 'کلمات کلیدی', pagespeed: 'سرعت' }[s] || (s || '—');
+	}
+	function articleStatus(s) {
+		return { brief: 'بریف', drafting: 'در حال نگارش', draft: 'پیش‌نویس', publish: 'منتشرشده', review: 'در انتظار تأیید', rejected: 'رد شده', failed: 'ناموفق' }[s] || (s || '—');
+	}
+	function runStatus(s) {
+		return { running: 'در جریان', done: 'انجام شد', failed: 'ناموفق', halted: 'متوقف', queued: 'در صف' }[s] || (s || '—');
+	}
 })(HS);
 
 	/* ---------- start ---------- */

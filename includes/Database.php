@@ -59,6 +59,10 @@ class Database {
 			'changelog',
 			'crawl_log',
 			'notices',
+			'agent_runs',
+			'agent_steps',
+			'agent_content',
+			'agent_memory',
 		);
 	}
 
@@ -353,6 +357,97 @@ class Database {
 			created_at DATETIME NOT NULL DEFAULT '1970-01-01 00:00:00',
 			PRIMARY KEY  (id),
 			KEY key_name (key_name)
+		) $charset;";
+
+		$sql[] = "CREATE TABLE {$p}agent_runs (
+			id BIGINT(20) UNSIGNED NOT NULL AUTO_INCREMENT,
+			goal VARCHAR(255) NOT NULL DEFAULT '',
+			mode VARCHAR(20) NOT NULL DEFAULT 'auto',
+			triggered_by VARCHAR(20) NOT NULL DEFAULT 'cron',
+			status VARCHAR(20) NOT NULL DEFAULT 'queued',
+			phase VARCHAR(30) NOT NULL DEFAULT '',
+			plan LONGTEXT NULL,
+			summary TEXT NULL,
+			steps_done INT(11) NOT NULL DEFAULT 0,
+			steps_total INT(11) NOT NULL DEFAULT 0,
+			wins INT(11) NOT NULL DEFAULT 0,
+			skips INT(11) NOT NULL DEFAULT 0,
+			fails INT(11) NOT NULL DEFAULT 0,
+			cost_usd DECIMAL(10,6) NOT NULL DEFAULT 0,
+			tokens_in INT(11) NOT NULL DEFAULT 0,
+			tokens_out INT(11) NOT NULL DEFAULT 0,
+			score_before DECIMAL(5,2) NOT NULL DEFAULT 0,
+			score_after DECIMAL(5,2) NOT NULL DEFAULT 0,
+			created_by BIGINT(20) UNSIGNED NOT NULL DEFAULT 0,
+			started_at DATETIME NULL,
+			finished_at DATETIME NULL,
+			created_at DATETIME NOT NULL DEFAULT '1970-01-01 00:00:00',
+			PRIMARY KEY  (id),
+			KEY status (status),
+			KEY created_at (created_at)
+		) $charset;";
+
+		$sql[] = "CREATE TABLE {$p}agent_steps (
+			id BIGINT(20) UNSIGNED NOT NULL AUTO_INCREMENT,
+			run_id BIGINT(20) UNSIGNED NOT NULL DEFAULT 0,
+			seq INT(11) NOT NULL DEFAULT 0,
+			skill VARCHAR(50) NOT NULL DEFAULT '',
+			title VARCHAR(255) NOT NULL DEFAULT '',
+			reason TEXT NULL,
+			payload LONGTEXT NULL,
+			result LONGTEXT NULL,
+			status VARCHAR(20) NOT NULL DEFAULT 'pending',
+			needs_review TINYINT(1) NOT NULL DEFAULT 0,
+			reverted TINYINT(1) NOT NULL DEFAULT 0,
+			post_id BIGINT(20) UNSIGNED NOT NULL DEFAULT 0,
+			cost_usd DECIMAL(10,6) NOT NULL DEFAULT 0,
+			ms INT(11) NOT NULL DEFAULT 0,
+			error TEXT NULL,
+			created_at DATETIME NOT NULL DEFAULT '1970-01-01 00:00:00',
+			PRIMARY KEY  (id),
+			KEY run_id (run_id, seq),
+			KEY skill (skill),
+			KEY status (status)
+		) $charset;";
+
+		$sql[] = "CREATE TABLE {$p}agent_content (
+			id BIGINT(20) UNSIGNED NOT NULL AUTO_INCREMENT,
+			run_id BIGINT(20) UNSIGNED NOT NULL DEFAULT 0,
+			post_id BIGINT(20) UNSIGNED NOT NULL DEFAULT 0,
+			keyword VARCHAR(255) NOT NULL DEFAULT '',
+			norm VARCHAR(255) NOT NULL DEFAULT '',
+			intent VARCHAR(30) NOT NULL DEFAULT '',
+			title VARCHAR(255) NOT NULL DEFAULT '',
+			slug VARCHAR(200) NOT NULL DEFAULT '',
+			brief LONGTEXT NULL,
+			draft LONGTEXT NULL,
+			outline LONGTEXT NULL,
+			sources LONGTEXT NULL,
+			quality DECIMAL(5,2) NOT NULL DEFAULT 0,
+			words INT(11) NOT NULL DEFAULT 0,
+			status VARCHAR(20) NOT NULL DEFAULT 'brief',
+			author_note TEXT NULL,
+			created_at DATETIME NOT NULL DEFAULT '1970-01-01 00:00:00',
+			updated_at DATETIME NOT NULL DEFAULT '1970-01-01 00:00:00',
+			PRIMARY KEY  (id),
+			KEY norm (norm),
+			KEY status (status),
+			KEY post_id (post_id)
+		) $charset;";
+
+		$sql[] = "CREATE TABLE {$p}agent_memory (
+			id BIGINT(20) UNSIGNED NOT NULL AUTO_INCREMENT,
+			scope VARCHAR(30) NOT NULL DEFAULT 'site',
+			slug VARCHAR(120) NOT NULL DEFAULT '',
+			kind VARCHAR(30) NOT NULL DEFAULT 'fact',
+			value LONGTEXT NULL,
+			weight DECIMAL(6,3) NOT NULL DEFAULT 1,
+			hits INT(11) NOT NULL DEFAULT 0,
+			created_at DATETIME NOT NULL DEFAULT '1970-01-01 00:00:00',
+			updated_at DATETIME NOT NULL DEFAULT '1970-01-01 00:00:00',
+			PRIMARY KEY  (id),
+			KEY scope (scope, slug),
+			KEY kind (kind)
 		) $charset;";
 
 		foreach ( $sql as $statement ) {

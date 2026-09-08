@@ -609,6 +609,7 @@ final class Settings {
 				'driver'        => 'openai',
 				'fallback'      => '',
 				'providers'     => array(),
+				'gapgpt_base'   => '',
 				'tasks'         => array(
 					'meta'        => '',
 					'keywords'    => '',
@@ -685,6 +686,42 @@ final class Settings {
 				'keep_history'   => 90,
 				'review_before_apply' => true,
 				'undo_enabled'   => true,
+			),
+			'agent'      => array(
+				'enabled'          => false,
+				'autonomy'         => 'supervised', // off|supervised|assisted|autonomous.
+				'schedule'         => 'daily', // hourly|daily|weekly|off.
+				'hour'             => 3,
+				'max_steps'        => 25,
+				'max_minutes'      => 8,
+				'budget_usd'       => 2.0,
+				'parallel'         => 4,
+				'skills'           => array(
+					'audit_fix'    => true,
+					'meta_fill'    => true,
+					'internal_link' => true,
+					'alt_fill'     => true,
+					'redirect_404' => true,
+					'schema_fill'  => true,
+					'index_submit' => true,
+					'content_gap'  => true,
+					'write_article' => false,
+					'optimize_post' => true,
+				),
+				'publish'          => 'draft', // draft|review|publish.
+				'articles_per_run' => 1,
+				'min_quality'      => 70,
+				'target_words'     => 1400,
+				'tone'             => 'professional',
+				'language'         => 'fa',
+				'allow_external'   => false,
+				'max_post_edits'   => 30,
+				'cooldown_hours'   => 24,
+				'notify'           => true,
+				'notify_email'     => '',
+				'keep_runs'        => 60,
+				'memory'           => true,
+				'dry_run'          => false,
 			),
 			'appearance' => array(
 				'theme'         => 'auto', // light|dark|auto.

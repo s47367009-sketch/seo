@@ -319,7 +319,7 @@ final class Content {
 	 *
 	 * @param int $post_id Post ID.
 	 */
-	public function mark_stale( $post_id ) {
+	public static function mark_stale( $post_id ) {
 		delete_post_meta( (int) $post_id, '_hs_analysis_checked' );
 	}
 

@@ -235,6 +235,108 @@ final class Gateway {
 	}
 
 	/**
+	 * Run several completions concurrently.
+	 *
+	 * Same guards, same logging and the same response shape as complete(), but
+	 * the requests leave together. Used by the agent to draft the sections of
+	 * a long article in parallel, which is where most of its waiting time is.
+	 *
+	 * @param array $jobs        List of complete()-style arg arrays.
+	 * @param int   $concurrency Max simultaneous requests.
+	 * @return array Results in the same order, each shaped like complete().
+	 */
+	public static function complete_many( $jobs, $concurrency = 4 ) {
+		$settings = \hoosh_seo()->settings;
+		$jobs     = array_values( (array) $jobs );
+
+		if ( ! $jobs ) {
+			return array();
+		}
+		if ( ! self::is_configured() ) {
+			$err = self::error( __( 'هوش مصنوعی تنظیم نشده است.', 'hoosh-seo' ), 'not-configured' );
+			return array_fill( 0, count( $jobs ), $err );
+		}
+		if ( ! self::budget_allows() ) {
+			$err = self::error( __( 'سقف هزینه ماهانه پر شده است.', 'hoosh-seo' ), 'budget' );
+			return array_fill( 0, count( $jobs ), $err );
+		}
+
+		$driver   = self::active_driver();
+		$start    = microtime( true );
+		$calls    = array();
+		$prepared = array();
+
+		foreach ( $jobs as $i => $job ) {
+			$job = wp_parse_args(
+				(array) $job,
+				array(
+					'task'        => 'generic',
+					'system'      => '',
+					'prompt'      => '',
+					'post_id'     => 0,
+					'max_tokens'  => (int) $settings->get( 'ai.max_tokens', 1200 ),
+					'temperature' => (float) $settings->get( 'ai.temperature', 0.4 ),
+					'json'        => null,
+					'job_id'      => 0,
+				)
+			);
+
+			$system = $job['system'] ? (string) $job['system'] : self::system_prompt();
+			$messages = array();
+			if ( $system ) {
+				$messages[] = array( 'role' => 'system', 'content' => $system );
+			}
+			if ( $job['prompt'] ) {
+				$messages[] = array( 'role' => 'user', 'content' => self::prepare( (string) $job['prompt'], (int) $settings->get( 'ai.max_chars', 9000 ) ) );
+			}
+
+			$calls[]      = array(
+				'messages' => $messages,
+				'opts'     => array(
+					'driver'      => $driver,
+					'model'       => self::model_for( $job['task'] ),
+					'temperature' => (float) $job['temperature'],
+					'max_tokens'  => (int) $job['max_tokens'],
+					'json'        => $job['json'],
+					'task'        => (string) $job['task'],
+					'job_id'      => (int) $job['job_id'],
+				),
+			);
+			$prepared[]   = $job;
+		}
+
+		$raws    = Providers::request_many( $calls, $concurrency );
+		$results = array();
+
+		foreach ( $raws as $i => $result ) {
+			$job = $prepared[ $i ];
+			if ( ! is_array( $result ) ) {
+				$result = self::error( __( 'پاسخی دریافت نشد.', 'hoosh-seo' ), 'no-response' );
+			}
+
+			$result['task']   = (string) $job['task'];
+			$result['cached'] = false;
+			$result['ms']     = (int) round( ( microtime( true ) - $start ) * 1000 );
+
+			if ( ! empty( $result['ok'] ) ) {
+				$result['text'] = isset( $result['text'] ) ? (string) $result['text'] : '';
+				// Same key complete() uses, so callers never branch on which
+				// of the two entry points answered.
+				$result['json'] = Providers::parse_json( (string) $result['text'] );
+				$usage          = isset( $result['usage'] ) ? (array) $result['usage'] : array( 'prompt' => 0, 'completion' => 0 );
+				$result['cost'] = Providers::cost( Providers::config( (string) $result['driver'] ), (int) $usage['prompt'], (int) $usage['completion'] );
+			} else {
+				$result['hint'] = Providers::hint( $result );
+			}
+
+			self::log_call( (int) $job['job_id'], $job['task'], $result, false, '' );
+			$results[] = $result;
+		}
+
+		return $results;
+	}
+
+	/**
 	 * Chat with the site assistant (multi-turn, uses ai.chat_memory).
 	 *
 	 * @param string $message User message.
@@ -377,18 +479,45 @@ final class Gateway {
 		$text = preg_replace( '/\n{3,}/', "\n\n", $text );
 
 		if ( $settings->on( 'ai.strip_pii' ) ) {
-			$text = preg_replace( '/\b(?:0\d{2}|9\d{2})[- ]?\d{3}[- ]?\d{4}\b/u', '[شماره حذف شد]', $text );
-			$text = preg_replace( '/[\w\.\-\+]+@[\w\.\-]+\.\w{2,}/u', '[ایمیل حذف شد]', $text );
-			$text = preg_replace( '/\b(?:\d[\s-]?){16}\b/', '[کارت حذف شد]', $text );
-			$text = preg_replace( '/\b(?:\d{3,10})(?:\s?[\u06f0-\u06f9]{10})?\b(?=\s*(?:کد ملی|national))/', '[کد حذف شد]', $text );
+			// Iranian mobile: 09xxxxxxxxx (11 digits), also +98/0098/98 forms.
+			$text = self::scrub( '/\b(?:\+?98|0098|0)?9\d{2}[- ]?\d{3}[- ]?\d{4}\b/u', '[شماره حذف شد]', $text );
+			// Landline: 0xx + 8 digits.
+			$text = self::scrub( '/\b0\d{2}[- ]?\d{8}\b/u', '[شماره حذف شد]', $text );
+			$text = self::scrub( '/[\w\.\-\+]+@[\w\.\-]+\.\w{2,}/u', '[ایمیل حذف شد]', $text );
+			$text = self::scrub( '/\b(?:\d[\s-]?){16}\b/', '[کارت حذف شد]', $text );
+			// National code. In Persian the label comes first ("کد ملی ۰۰۸۴۵۷۵۹۴۸"),
+			// so match the label then the digits — ASCII or Persian. PCRE2 has
+			// no \uXXXX escape; Persian digits are \x{06f0}-\x{06f9}.
+			$text = self::scrub( '/(کد\s*ملی|شماره\s*ملی|national\s*(?:id|code))\s*[:\-]?\s*(?:\d|[\x{06f0}-\x{06f9}]){8,10}/ui', '$1 [کد حذف شد]', $text );
+			// A bare 10-digit national code standing alone.
+			$text = self::scrub( '/(?<![\d.])\d{10}(?![\d.])/u', '[کد حذف شد]', $text );
 		}
 
+		$text = (string) $text;
 		if ( $max > 0 && mb_strlen( $text ) > $max ) {
 			$text = mb_substr( $text, 0, (int) ( $max * 0.65 ) )
 				. "\n\n…\n\n"
 				. mb_substr( $text, -1 * (int) ( $max * 0.3 ) );
 		}
 		return $text;
+	}
+
+	/**
+	 * One PII substitution that cannot destroy the text.
+	 *
+	 * preg_replace() returns null when the pattern fails to compile, and a
+	 * null here would silently blank the entire prompt — the model would get
+	 * an empty message and answer nonsense. Keeping the original text on
+	 * failure is the only safe behaviour for a redaction step.
+	 *
+	 * @param string $pattern Regex.
+	 * @param string $replace Replacement.
+	 * @param string $text    Subject.
+	 * @return string
+	 */
+	protected static function scrub( $pattern, $replace, $text ) {
+		$out = preg_replace( $pattern, $replace, (string) $text );
+		return is_string( $out ) ? $out : (string) $text;
 	}
 
 	/**

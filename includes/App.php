@@ -497,8 +497,9 @@ final class App {
 			array(
 				'group' => 'امروز',
 				'items' => array(
-					array( 'id' => 'dashboard', 'label' => 'داشبورد', 'icon' => 'gauge' ),
-					array( 'id' => 'tasks', 'label' => 'صف کارها', 'icon' => 'check-list', 'badge' => 'tasks' ),
+				array( 'id' => 'dashboard', 'label' => 'داشبورد', 'icon' => 'gauge' ),
+				array( 'id' => 'agent', 'label' => 'ایجنت خودکار', 'icon' => 'robot', 'badge' => 'agent' ),
+				array( 'id' => 'tasks', 'label' => 'صف کارها', 'icon' => 'check-list', 'badge' => 'tasks' ),
 				),
 			),
 			array(
