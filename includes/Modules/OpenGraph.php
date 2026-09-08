@@ -8,7 +8,6 @@
 namespace HooshSEO\Modules;
 
 use HooshSEO\Helpers;
-use HooshSEO\hoosh_seo;
 use HooshSEO\Meta;
 
 defined( 'ABSPATH' ) || exit;

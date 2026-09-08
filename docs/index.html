@@ -1,0 +1,365 @@
+<!doctype html>
+<html lang="fa-IR" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="robots" content="noindex, nofollow">
+<meta name="color-scheme" content="light dark">
+<title>راهنمای هوش‌سئو | استودیوی سئوی هوشمند وردپرس</title>
+<link rel="icon" href="../assets/img/favicon.svg" sizes="any">
+<style>
+	:root {
+		--a: #14a58f; --a-soft: rgba(20,165,143,.12); --a-line: rgba(20,165,143,.38);
+		--a-deep: color-mix(in srgb, var(--a) 72%, #04121a);
+		--bg: #f5f7fb; --surface: #fff; --surface-2: #f8fafc;
+		--ink: #16202e; --mut: #64748b; --line: #e4e8f0;
+		--ok: #16a34a; --warn: #d97706; --bad: #dc2626;
+		--r: 16px; --r-sm: 10px;
+		--e1: 0 1px 2px rgba(16,24,40,.04), 0 1px 3px rgba(16,24,40,.06);
+		--e2: 0 2px 4px -1px rgba(16,24,40,.06), 0 8px 20px -8px rgba(16,24,40,.14);
+		--mono: "JetBrains Mono", "SF Mono", Menlo, Consolas, monospace;
+		--font: "Vazirmatn", "Segoe UI", Tahoma, -apple-system, "Helvetica Neue", Arial, sans-serif;
+	}
+	@media (prefers-color-scheme: dark) {
+		:root {
+			--bg: #0f1520; --surface: #17202e; --surface-2: #1d2738;
+			--ink: #e6ebf4; --mut: #93a1b5; --line: #29344a; color-scheme: dark;
+			--e1: 0 1px 2px rgba(0,0,0,.30); --e2: 0 2px 4px -1px rgba(0,0,0,.36), 0 10px 24px -10px rgba(0,0,0,.55);
+		}
+	}
+	* { box-sizing: border-box; }
+	body {
+		margin: 0; background: var(--bg); color: var(--ink);
+		font-family: var(--font); font-size: 15px; line-height: 1.85;
+		-webkit-font-smoothing: antialiased; text-rendering: optimizeLegibility;
+	}
+	body::before {
+		content: ""; position: fixed; inset: 0; z-index: -1; pointer-events: none;
+		background:
+			radial-gradient(1000px 480px at 100% -10%, color-mix(in srgb, var(--a) 8%, transparent), transparent 62%),
+			radial-gradient(720px 400px at -6% 106%, color-mix(in srgb, var(--a) 6%, transparent), transparent 58%);
+	}
+	::selection { background: var(--a-soft); }
+	.wrap { max-width: 880px; margin: 0 auto; padding: 0 20px 90px; }
+
+	header {
+		display: flex; align-items: center; gap: 14px;
+		padding: 26px 0 20px; margin-bottom: 26px;
+		border-bottom: 1px solid var(--line);
+	}
+	.mark {
+		width: 46px; height: 46px; flex: 0 0 46px; border-radius: 15px;
+		background: linear-gradient(180deg, color-mix(in srgb, var(--a) 92%, #fff 8%), var(--a-deep));
+		color: #fff; display: grid; place-items: center; font-weight: 800; font-size: 18px;
+		box-shadow: 0 8px 22px -10px var(--a-line), inset 0 1px 0 rgba(255,255,255,.26);
+	}
+	h1 { margin: 0; font-size: 21px; font-weight: 780; letter-spacing: -.02em; }
+	header p { margin: 2px 0 0; font-size: 13px; color: var(--mut); }
+
+	nav.toc {
+		display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 30px;
+	}
+	nav.toc a {
+		font-size: 12.5px; text-decoration: none; color: var(--ink);
+		background: var(--surface); border: 1px solid var(--line);
+		border-radius: 999px; padding: 5px 13px; box-shadow: var(--e1);
+		transition: transform .16s cubic-bezier(.16,1,.3,1), box-shadow .16s, border-color .16s, color .16s;
+	}
+	nav.toc a:hover { transform: translateY(-1px); box-shadow: var(--e2); border-color: var(--a-line); color: var(--a); }
+
+	section { margin-bottom: 34px; scroll-margin-top: 20px; }
+	section > h2 {
+		display: flex; align-items: center; gap: 10px;
+		font-size: 17px; font-weight: 760; margin: 0 0 14px; letter-spacing: -.015em;
+	}
+	section > h2::before {
+		content: ""; width: 4px; height: 20px; border-radius: 3px;
+		background: linear-gradient(180deg, var(--a), color-mix(in srgb, var(--a) 30%, transparent));
+	}
+	h3 { font-size: 14.5px; font-weight: 700; margin: 20px 0 8px; }
+
+	.card {
+		background: var(--surface); border: 1px solid var(--line);
+		border-radius: var(--r); box-shadow: var(--e1); padding: 18px 20px;
+	}
+	.card + .card { margin-top: 12px; }
+
+	ol, ul { margin: 8px 0; padding-inline-start: 22px; }
+	li { margin: 5px 0; }
+	p { margin: 10px 0; }
+	a { color: var(--a); }
+
+	code {
+		font-family: var(--mono); font-size: 12.5px; direction: ltr; unicode-bidi: isolate;
+		background: var(--surface-2); border: 1px solid var(--line);
+		border-radius: 6px; padding: 1px 6px; display: inline-block;
+	}
+	pre {
+		font-family: var(--mono); font-size: 12.5px; direction: ltr; text-align: left;
+		background: color-mix(in srgb, #0b1220 96%, var(--a) 4%); color: #d8e2f2;
+		border-radius: 12px; padding: 14px 16px; overflow-x: auto; line-height: 1.8;
+		box-shadow: var(--e1), inset 0 0 0 1px rgba(255,255,255,.06);
+	}
+	pre code { background: none; border: 0; padding: 0; color: inherit; display: inline; }
+
+	table { width: 100%; border-collapse: collapse; font-size: 13.5px; margin: 10px 0; }
+	th, td { padding: 9px 12px; text-align: start; border-bottom: 1px solid var(--line); }
+	thead th {
+		background: var(--surface-2); font-size: 11.5px; font-weight: 700;
+		letter-spacing: .04em; color: var(--mut);
+	}
+	tbody tr:hover { background: color-mix(in srgb, var(--a) 5%, transparent); }
+	tbody tr:last-child td { border-bottom: 0; }
+
+	.note {
+		display: flex; gap: 11px; align-items: flex-start;
+		border-radius: 12px; padding: 13px 15px; margin: 14px 0; font-size: 13.5px;
+		background: var(--a-soft); box-shadow: inset 0 0 0 1px var(--a-line);
+	}
+	.note.warn { background: color-mix(in srgb, var(--warn) 12%, transparent); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--warn) 32%, transparent); }
+	.note.bad { background: color-mix(in srgb, var(--bad) 10%, transparent); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--bad) 28%, transparent); }
+	.note b { display: block; margin-bottom: 2px; }
+	.note span.ico { flex: 0 0 auto; font-size: 17px; line-height: 1.5; }
+
+	details {
+		background: var(--surface); border: 1px solid var(--line);
+		border-radius: var(--r-sm); padding: 0; margin: 9px 0; overflow: hidden;
+		box-shadow: var(--e1); transition: border-color .16s;
+	}
+	details[open] { border-color: var(--a-line); }
+	summary {
+		cursor: pointer; padding: 12px 16px; font-weight: 650; font-size: 14px;
+		list-style: none; display: flex; align-items: center; gap: 9px;
+	}
+	summary::-webkit-details-marker { display: none; }
+	summary::before {
+		content: "›"; display: inline-block; font-size: 17px; line-height: 1;
+		color: var(--a); transition: transform .2s cubic-bezier(.16,1,.3,1);
+	}
+	details[open] summary::before { transform: rotate(90deg); }
+	details .in { padding: 0 16px 14px 40px; font-size: 13.5px; color: color-mix(in srgb, var(--ink) 90%, transparent); }
+
+	footer {
+		margin-top: 46px; padding-top: 20px; border-top: 1px solid var(--line);
+		font-size: 12.5px; color: var(--mut); text-align: center;
+	}
+	@media (max-width: 620px) {
+		.wrap { padding: 0 14px 70px; }
+		h1 { font-size: 18px; }
+		pre { font-size: 11.5px; }
+	}
+	@media print { nav.toc, header { break-after: avoid; } .card { box-shadow: none; } }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+	<header>
+		<div class="mark">هش</div>
+		<div>
+			<h1>راهنمای هوش‌سئو</h1>
+			<p>استودیوی سئوی هوشمند وردپرس — نصب، پیکربندی و عیب‌یابی</p>
+		</div>
+	</header>
+
+	<nav class="toc">
+		<a href="#install">نصب</a>
+		<a href="#requirements">حداقل‌های سرور</a>
+		<a href="#ai">هوش مصنوعی</a>
+		<a href="#studio">استودیو</a>
+		<a href="#trouble">عیب‌یابی</a>
+		<a href="#cli">خط فرمان</a>
+		<a href="#uninstall">حذف کامل</a>
+	</nav>
+
+	<section id="install">
+		<h2>نصب</h2>
+		<div class="card">
+			<h3>از پیشخوان وردپرس</h3>
+			<ol>
+				<li>پیشخوان ← افزونه‌ها ← «افزودهٔ جدید» ← «بارگذاری افزونه».</li>
+				<li>فایل <code>hoosh-seo.zip</code> را انتخاب و «هم‌اکنون بارگذاری کن» را بزنید.</li>
+				<li>«فعال‌سازی» را بزنید. جدول‌ها در همین مرحله خودکار ساخته می‌شوند.</li>
+				<li>از منوی «هوش‌سئو» گزینهٔ «باز کردن استودیو» را بزنید؛ استودیو در تب تازه باز می‌شود.</li>
+			</ol>
+			<div class="note">
+				<span class="ico">ℹ️</span>
+				<div><b>ساختار بسته</b> فایل اصلی افزونه باید <em>یک پوشه</em> زیر ریشهٔ ZIP باشد، نه دو پوشه. ساختار دو-لایه باعث خطای «افزونهٔ معتبر یافت نشد» می‌شود.</div>
+			</div>
+			<pre><code>hoosh-seo.zip
+└── hoosh-seo/
+    ├── hoosh-seo.php      ← سربرگ افزونه
+    ├── uninstall.php
+    ├── readme.txt
+    ├── includes/
+    ├── assets/
+    ├── docs/
+    └── languages/</code></pre>
+
+			<h3>با FTP</h3>
+			<p>پوشهٔ <code>hoosh-seo</code> را در <code>wp-content/plugins/</code> بفرستید و از فهرست افزونه‌ها فعالش کنید.</p>
+			<div class="note warn">
+				<span class="ico">⚠️</span>
+				<div><b>پوشهٔ <code>.git</code> را ارسال نکنید.</b> یک مخزن گیت با هزاران ریزفایل، هم آپلود را بی‌نهایت طولانی می‌کند و هم در میزبان‌های اشتراکی خطای «ظرفیت inode» می‌دهد.</div>
+			</div>
+			<pre><code>rsync -a --exclude '.git' --exclude 'node_modules' \
+  ./ ./your-site/wp-content/plugins/hoosh-seo/</code></pre>
+		</div>
+	</section>
+
+	<section id="requirements">
+		<h2>حداقل‌های سرور</h2>
+		<div class="card">
+			<table>
+				<thead><tr><th>مورد</th><th>مقدار</th><th>نکته</th></tr></thead>
+				<tbody>
+					<tr><td>WordPress</td><td>۵.۸ به بعد</td><td>برای REST fields و بلوک‌ساز</td></tr>
+					<tr><td>PHP</td><td>۷.۳ به بعد</td><td>با ۸.x هم آزمون شده</td></tr>
+					<tr><td>MySQL</td><td>۵.۷ / MariaDB ۱۰.۲</td><td>برای <code>utf8mb4</code></td></tr>
+					<tr><td><code>upload_max_filesize</code></td><td>≥ ۸ مگابایت</td><td>بستهٔ افزونه حدود ۱–۲ مگابایت</td></tr>
+					<tr><td><code>post_max_size</code></td><td>≥ ۱۰ مگابایت</td><td>باید بزرگ‌تر از مقدار بالا باشد</td></tr>
+					<tr><td><code>max_execution_time</code></td><td>≥ ۶۰ ثانیه</td><td>برای نقشهٔ سایت و مهاجرت</td></tr>
+					<tr><td><code>memory_limit</code></td><td>≥ ۱۲۸M</td><td>در سایت‌های پرکانتنت ۲۵۶M</td></tr>
+					<tr><td><code>curl</code></td><td>باز</td><td>سرچ کنسول، PSI و هوش مصنوعی</td></tr>
+					<tr><td><code>mbstring</code></td><td>فعال</td><td>برای متن فارسی ضروری است</td></tr>
+				</tbody>
+			</table>
+			<pre><code>; php.ini یا .user.ini
+upload_max_filesize = 16M
+post_max_size       = 20M
+max_execution_time  = 120
+memory_limit        = 256M</code></pre>
+		</div>
+	</section>
+
+	<section id="ai">
+		<h2>اتصال هوش مصنوعی</h2>
+		<div class="card">
+			<ol>
+				<li>استودیو ← «تنظیمات هوش مصنوعی».</li>
+				<li>سرویس را انتخاب کنید: OpenAI، Claude، Gemini، DeepSeek، Groq، Mistral، Perplexity، Cohere، Ollama محلی، یا هر سرویس سازگار با OpenAI.</li>
+				<li>کلید API را وارد و «آزمون» را بزنید.</li>
+				<li>سقف هزینهٔ ماهانه را تعیین کنید؛ بعد از رسیدن به آن، افزونه خودکار تولید را متوقف می‌کند.</li>
+			</ol>
+			<div class="note">
+				<span class="ico">🔒</span>
+				<div><b>کلیدها به مرورگر فرستاده نمی‌شوند.</b> استودیو فقط «تنظیم شده / نشده» و یک نسخهٔ ماسک‌شده را می‌بیند؛ کلید واقعی تنها سمت سرور استفاده می‌شود.</div>
+			</div>
+		</div>
+	</section>
+
+	<section id="studio">
+		<h2>استودیو</h2>
+		<div class="card">
+			<p>استودیو یک اپلیکیشن تمام‌صفحهٔ مستقل است، نه یک صفحهٔ پیشخوان: طراحی RTL-first، حالت روشن/تیره/خودکار، سه سطح تراکم، و پالت فرمان با <code>⌘K</code> یا <code>Ctrl+K</code>.</p>
+			<p>استودیو با یک نشانی موقت و امضاشده باز می‌شود. اگر «مهلت این نشانی تمام شد» را دیدید، از منوی «هوش‌سئو» در پیشخوان دوباره بازش کنید.</p>
+			<p>کلید API و داده‌های حساس هرگز در خروجی استودیو چاپ نمی‌شوند.</p>
+		</div>
+	</section>
+
+	<section id="trouble">
+		<h2>عیب‌یابی</h2>
+
+		<details open>
+			<summary>«افزونهٔ معتبر یافت نشد» یا خطای فاجعه‌بار هنگام فعال‌سازی</summary>
+			<div class="in">
+				<ul>
+					<li>فایل <code>hoosh-seo.php</code> باید <em>یک پوشه</em> زیر ریشهٔ ZIP باشد، نه دو پوشه.</li>
+					<li>مطمئن شوید <code>includes/autoloader.php</code> هم منتقل شده است.</li>
+					<li>خطای واقعی در <code>wp-content/debug.log</code> است؛ <code>WP_DEBUG</code> و <code>WP_DEBUG_LOG</code> را موقتاً <code>true</code> کنید.</li>
+				</ul>
+				<pre><code>define( 'WP_DEBUG', true );
+define( 'WP_DEBUG_LOG', true );
+define( 'WP_DEBUG_DISPLAY', false );</code></pre>
+			</div>
+		</details>
+
+		<details>
+			<summary>آپلود ZIP شکست خورد یا صفحه سفید شد</summary>
+			<div class="in">
+				<ul>
+					<li><code>upload_max_filesize</code> و <code>post_max_size</code> را افزایش دهید.</li>
+					<li>اگر میزبان <code>mod_security</code> دارد، موقتاً غیرفعالش کنید.</li>
+					<li>راه‌حل همیشگی: ارسال با FTP یا <code>wp plugin install /path/to.zip --activate</code>.</li>
+				</ul>
+			</div>
+		</details>
+
+		<details>
+			<summary>جدول‌ها ساخته نشده‌اند</summary>
+			<div class="in">
+				<ul>
+					<li>افزونه را یک‌بار غیرفعال و دوباره فعال کنید.</li>
+					<li>یا استودیو ← ابزارها ← «نصب/تعمیر جدول‌ها».</li>
+					<li>اگر کاربر MySQL حق <code>CREATE</code> ندارد، با مدیر سرور هماهنگ کنید.</li>
+				</ul>
+			</div>
+		</details>
+
+		<details>
+			<summary>نقشهٔ سایت ۴۰۴ می‌دهد</summary>
+			<div class="in">
+				<p>تنظیمات ← پیوندهای یکتا ← یک‌بار «ذخیره» تا قوانین بازنویسی بازسازی شود. روی NGINX:</p>
+				<pre><code>rewrite ^/sitemap_index\.xml$        /index.php?hoosh_sitemap=index last;
+rewrite ^/sitemap-([a-z0-9\-_]+)\.xml$ /index.php?hoosh_sitemap=$1  last;</code></pre>
+			</div>
+		</details>
+
+		<details>
+			<summary>توضیحات متا اعمال نمی‌شود</summary>
+			<div class="in">
+				<ul>
+					<li>اگر قالب شما <code>wp_head()</code> را در <code>footer.php</code> صدا می‌زند، جابه‌جاش کنید؛ متا باید در <code>&lt;head&gt;</code> چاپ شود.</li>
+					<li>افزونهٔ سئوی دیگری را غیرفعال کنید (تداخل متا و اسکیما).</li>
+				</ul>
+			</div>
+		</details>
+
+		<details>
+			<summary>سرعت سایت بعد از فعال‌سازی کم شد</summary>
+			<div class="in">
+				<p>استودیو ← سرعت ← «اعمال همهٔ تیک‌های بی‌خطر» و بعد پاک کردن کش. اگر کش object (Redis/Memcached) دارید، کش افزونه را از بخش ابزارها پاک کنید.</p>
+			</div>
+		</details>
+	</section>
+
+	<section id="cli">
+		<h2>نصب و نگهداری از خط فرمان</h2>
+		<div class="card">
+			<pre><code># نصب و فعال‌سازی
+wp plugin install dist/hoosh-seo.zip --activate
+
+# پاک کردن کش
+wp cache flush
+
+# اجرای کارهای زمان‌بندی‌شده بدون منتظر ماندن
+# (کلید در استودیو ← ابزارها نشان داده می‌شود)
+curl -s "https://example.com/?hoosh_cron=daily&amp;key=KEY"
+curl -s "https://example.com/?hoosh_cron=batch&amp;key=KEY"
+
+# زمان‌بندی واقعی با crontab
+crontab -e
+0 3 * * * curl -s "https://example.com/?hoosh_cron=daily&amp;key=KEY" &gt;/dev/null 2&gt;&amp;1</code></pre>
+			<div class="note warn">
+				<span class="ico">🕐</span>
+				<div><b>چرا crontab؟</b> <code>wp-cron.php</code> وردپرس فقط با بازدید صفحه اجرا می‌شود. در سایت‌های کم‌بازدید، کارهای روزانه (ردیاب رتبه، نقشهٔ سایت، ایندکس‌بان) دیر یا هرگز اجرا نمی‌شوند.</div>
+			</div>
+		</div>
+	</section>
+
+	<section id="uninstall">
+		<h2>حذف کامل</h2>
+		<div class="card">
+			<p>برای پاک شدن همه‌چیز: استودیو ← تنظیمات ← عمومی ← گزینهٔ «حذف داده‌ها هنگام حذف افزونه» را روشن کنید، سپس افزونه را حذف کنید. اگر خاموش باشد، جدول‌ها و تنظیمات دست‌نخورده می‌مانند تا نصب دوباره همه‌چیز را برگرداند.</p>
+			<p>وقتی پیشخوان در دسترس نیست، در <code>wp-config.php</code>:</p>
+			<pre><code>define( 'HOOSH_SEO_REMOVE_ON_UNINSTALL', true );</code></pre>
+		</div>
+	</section>
+
+	<footer>
+		هوش‌سئو — راهنمای نصب و عیب‌یابی. نسخهٔ کامل‌تر در <code>docs/INSTALL.md</code> مخزن.
+	</footer>
+
+</div>
+</body>
+</html>

@@ -150,7 +150,7 @@ final class Rest {
 		register_rest_route( $ns, '/links/insert', array_merge( array( 'callback' => array( __CLASS__, 'links_insert' ) ), $this->write() ) );
 		register_rest_route( $ns, '/links/stats', array_merge( array( 'callback' => array( __CLASS__, 'links_stats' ) ), $this->read() ) );
 		register_rest_route( $ns, '/links/report', array_merge( array( 'callback' => array( __CLASS__, 'links_report' ) ), $this->read() ) );
-		register_rest_route( $ns, '/links/check', array_merge( array( 'callback' => array( __CLASS__, 'links_check' ) ), $this->write() ) );
+		register_rest_route( $ns, '/links/check', array_merge( array( 'callback' => array( __CLASS__, 'links_check' ) ), $this->read() ) );
 		register_rest_route( $ns, '/links/scan', array_merge( array( 'callback' => array( __CLASS__, 'links_scan' ) ), $this->write() ) );
 		register_rest_route( $ns, '/links/scan/reset', array_merge( array( 'callback' => array( __CLASS__, 'links_scan_reset' ) ), $this->write() ) );
 
@@ -194,7 +194,7 @@ final class Rest {
 			'POST' => array( 'callback' => array( __CLASS__, 'schema_save' ) ) + $this->write(),
 		) );
 		register_rest_route( $ns, '/schema/preview', array_merge( array( 'callback' => array( __CLASS__, 'schema_preview' ) ), $this->read() ) );
-		register_rest_route( $ns, '/schema/validate', array_merge( array( 'callback' => array( __CLASS__, 'schema_validate' ) ), $this->read() ) );
+		register_rest_route( $ns, '/schema/validate', array_merge( array( 'callback' => array( __CLASS__, 'schema_validate' ) ), $this->read( array( 'GET', 'POST' ) ) ) );
 		register_rest_route( $ns, '/schema/import', array_merge( array( 'callback' => array( __CLASS__, 'schema_import' ) ), $this->write() ) );
 		register_rest_route( $ns, '/schema/delete', array_merge( array( 'callback' => array( __CLASS__, 'schema_delete' ) ), $this->write() ) );
 
@@ -267,7 +267,7 @@ final class Rest {
 		register_rest_route( $ns, '/report/email', array_merge( array( 'callback' => array( __CLASS__, 'report_email' ) ), $this->write() ) );
 		register_rest_route( $ns, '/tools/flush', array_merge( array( 'callback' => array( __CLASS__, 'tools_flush' ) ), $this->write() ) );
 		register_rest_route( $ns, '/tools/system', array_merge( array( 'callback' => array( __CLASS__, 'tools_system' ) ), $this->read() ) );
-		register_rest_route( $ns, '/tools/cron', array_merge( array( 'callback' => array( __CLASS__, 'tools_cron' ) ), $this->read() ) );
+		register_rest_route( $ns, '/tools/cron', array_merge( array( 'callback' => array( __CLASS__, 'tools_cron' ) ), $this->write() ) );
 		register_rest_route( $ns, '/docs/(?P<name>[a-zA-Z0-9_-]+)', array_merge( array( 'callback' => array( __CLASS__, 'docs' ) ), $this->read() ) );
 
 		// ---- post-scoped editor writes -------------------------------
@@ -294,9 +294,9 @@ final class Rest {
 	 *
 	 * @return array
 	 */
-	protected function read() {
+	protected function read( $methods = 'READABLE' ) {
 		return array(
-			'methods'             => 'READABLE',
+			'methods'             => (array) $methods,
 			'permission_callback' => array( __CLASS__, 'can_read_check' ),
 			'args'                => array(),
 		);
@@ -2076,11 +2076,66 @@ final class Rest {
 	}
 
 	/**
-	 * Cron detail.
+	 * Cron detail + manual trigger.
 	 *
+	 * GET (or no action) returns the schedule. POST runs a job now or
+	 * re-installs the tables, which is what the Tools screen buttons send.
+	 *
+	 * @param \WP_REST_Request $request Request.
 	 * @return \WP_REST_Response
 	 */
-	public static function tools_cron() {
+	public static function tools_cron( $request = null ) {
+		$action = $request ? sanitize_key( (string) $request->get_param( 'action' ) ) : '';
+		$job    = $request ? sanitize_key( (string) $request->get_param( 'job' ) ) : '';
+
+		if ( 'install' === $action ) {
+			Database::install();
+			Cron::schedule_all();
+			return rest_ensure_response(
+				array(
+					'ok'     => true,
+					'action' => 'install',
+					'tables' => Database::stats(),
+					'status' => Cron::status(),
+				)
+			);
+		}
+
+		if ( 'schedule' === $action ) {
+			Cron::clear_all();
+			Cron::schedule_all();
+			return rest_ensure_response( array( 'ok' => true, 'action' => 'schedule', 'status' => Cron::status() ) );
+		}
+
+		if ( 'run' === $action ) {
+			$ran = array();
+			$map = array(
+				'hoosh_seo_batch'  => 'run_batch',
+				'hoosh_seo_hourly' => 'run_hourly',
+				'hoosh_seo_daily'  => 'run_daily',
+				'hoosh_seo_weekly' => 'run_weekly',
+			);
+			if ( '' === $job ) {
+				$job = 'hoosh_seo_batch';
+			}
+			// Tolerate the "daily_batch" spelling used by older builds of the app.
+			$job = str_replace( 'hoosh_seo_daily_batch', 'hoosh_seo_batch', $job );
+
+			if ( isset( $map[ $job ] ) && method_exists( 'HooshSEO\Cron', $map[ $job ] ) ) {
+				call_user_func( array( 'HooshSEO\Cron', $map[ $job ] ) );
+				$ran[] = $job;
+			}
+
+			return rest_ensure_response(
+				array(
+					'ok'     => ! empty( $ran ),
+					'action' => 'run',
+					'ran'    => $ran,
+					'status' => Cron::status(),
+				)
+			);
+		}
+
 		return rest_ensure_response( Cron::status() );
 	}
 

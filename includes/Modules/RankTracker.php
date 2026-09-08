@@ -8,6 +8,7 @@
 
 namespace HooshSEO\Modules;
 
+use HooshSEO\Admin;
 use HooshSEO\Database;
 use HooshSEO\Helpers;
 

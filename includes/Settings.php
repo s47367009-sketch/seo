@@ -141,12 +141,16 @@ final class Settings {
 					'post_type' => 'post',
 					'days'     => 2,
 					'keywords' => '',
+					'publisher' => '',
+					'genres'   => '',
+					'language' => 'fa',
 				),
 				'image_sitemap'   => array(
 					'enabled' => true,
 					'featured' => true,
 					'content'  => false,
 					'product'  => true,
+					'types'    => array( 'post', 'page' ),
 				),
 				'author_sitemap'  => array(
 					'enabled' => false,

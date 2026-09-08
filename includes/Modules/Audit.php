@@ -378,7 +378,7 @@ final class Audit {
 					$out['changes_7d'] = (int) $wpdb->get_var( 'SELECT COUNT(*) FROM ' . Database::table( 'changelog' ) . ' WHERE created_at > DATE_SUB(UTC_TIMESTAMP(), INTERVAL 7 DAY)' ); // phpcs:ignore
 				}
 
-				$sitemap = Modules\Sitemap::children();
+				$sitemap = Sitemap::children();
 				$urls    = 0;
 				foreach ( $sitemap as $child ) {
 					$urls += (int) ( $child['count'] ?? 0 );
@@ -1082,7 +1082,7 @@ final class Audit {
 			)
 		);
 		if ( \hoosh_seo()->settings->on( 'audit.ping_on_menu' ) ) {
-			Modules\Sitemap::ping_all();
+			Sitemap::ping_all();
 		}
 	}
 

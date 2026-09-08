@@ -43,6 +43,13 @@ final class Plugin {
 	private $services = array();
 
 	/**
+	 * Modules that could not be loaded, kept for the tools screen.
+	 *
+	 * @var array
+	 */
+	private $broken = array();
+
+	/**
 	 * Module classes, in load order.
 	 *
 	 * @var array
@@ -112,21 +119,43 @@ final class Plugin {
 		load_plugin_textdomain( 'hoosh-seo', false, dirname( HOOSH_SEO_BASENAME ) . '/languages' );
 
 		foreach ( $this->module_classes as $relative ) {
-			$class    = 'HooshSEO\\' . str_replace( '_', '', $relative );
 			$relative = str_replace( '_', '', $relative );
+			$class    = 'HooshSEO\\' . $relative;
+			$slug     = strtolower( substr( strrchr( '\\' . $relative, '\\' ), 1 ) );
 
-			if ( ! class_exists( $class ) ) {
+			// A single broken module must never take the whole site down with it.
+			try {
+				if ( ! class_exists( $class ) ) {
+					continue;
+				}
+				if ( ! method_exists( $class, 'instance' ) || ! is_callable( array( $class, 'instance' ) ) ) {
+					$this->broken[] = $class;
+					continue;
+				}
+
+				$object = call_user_func( array( $class, 'instance' ) );
+			} catch ( \Throwable $e ) { // phpcs:ignore PHPCompatibility
+				$this->broken[] = $class;
+				$this->log_boot_error( $class, $e );
 				continue;
 			}
 
-			$object = call_user_func( array( $class, 'instance' ) );
-			$slug   = strtolower( substr( strrchr( '\\' . $relative, '\\' ), 1 ) );
+			if ( ! is_object( $object ) ) {
+				continue;
+			}
 
 			$this->services[ $slug ] = $object;
 
 			if ( 'settings' === $slug ) {
 				$this->settings = $object;
 			}
+		}
+
+		// Settings is a hard dependency for almost everything else; stop early
+		// with a readable notice instead of a fatal further down the road.
+		if ( null === $this->settings ) {
+			add_action( 'admin_notices', array( $this, 'fatal_notice' ) );
+			return;
 		}
 
 		// Front-end behaviour: redirects, 404 logging, click tracking, AI briefs.
@@ -163,6 +192,43 @@ final class Plugin {
 	}
 
 	/**
+	 * Modules that failed to boot.
+	 *
+	 * @return array
+	 */
+	public function broken() {
+		return $this->broken;
+	}
+
+	/**
+	 * Remember a boot failure so it is visible instead of silent.
+	 *
+	 * @param string     $class Class that failed.
+	 * @param \Throwable $e     The error.
+	 */
+	protected function log_boot_error( $class, $e ) {
+		$log = (array) get_option( 'hoosh_seo_boot_errors', array() );
+		$log[ $class ] = array(
+			'message' => $e->getMessage(),
+			'where'   => str_replace( HOOSH_SEO_DIR, '', $e->getFile() ) . ':' . $e->getLine(),
+			'time'    => current_time( 'mysql' ),
+		);
+		// Keep only the last ten distinct failures.
+		update_option( 'hoosh_seo_boot_errors', array_slice( $log, -10, null, true ), false );
+	}
+
+	/**
+	 * Last resort notice when the settings module itself could not load.
+	 */
+	public function fatal_notice() {
+		printf(
+			'<div class="notice notice-error"><p><strong>%s</strong> %s</p></div>',
+			esc_html__( 'هوش‌سئو:', 'hoosh-seo' ),
+			esc_html__( 'ماژول تنظیمات بارگذاری نشد؛ افزونه غیرفعال است تا سایت شما سالم بماند. جزئیات در فایل خطای وردپرس ثبت شده است.', 'hoosh-seo' )
+		);
+	}
+
+	/**
 	 * Global hooks.
 	 */
 	public function register_hooks() {
@@ -180,7 +246,7 @@ final class Plugin {
 	 * @return array
 	 */
 	public function resource_hints( $hints, $relation ) {
-		if ( 'preconnect' === $relation && $this->settings->get( 'appearance.remote_font', true ) ) {
+		if ( 'preconnect' === $relation && $this->settings && $this->settings->get( 'appearance.remote_font', true ) ) {
 			$hints[] = array(
 				'href'        => 'https://cdn.jsdelivr.net',
 				'crossorigin' => 'anonymous',

@@ -9,7 +9,6 @@ namespace HooshSEO\Modules;
 
 use HooshSEO\Admin;
 use HooshSEO\Helpers;
-use HooshSEO\hoosh_seo;
 
 defined( 'ABSPATH' ) || exit;
 

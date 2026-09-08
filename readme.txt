@@ -2,9 +2,9 @@
 Contributors: hooshseo
 Tags: seo, persian, فارسی, schema, sitemap, ai, woocommerce, rank tracker
 Requires at least: 5.8
-Tested up to: 6.6
+Tested up to: 6.8
 Requires PHP: 7.3
-Stable tag: 1.0.0
+Stable tag: 1.0.1
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -66,10 +66,25 @@ License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
 == Changelog ==
 
+= 1.0.1 =
+* رفع خطای مرگبار هنگام فعال‌سازی: `HooshSEO\AI\Gateway` متد `instance()` نداشت و بوت افزونه در `includes/Plugin.php:122` با خطای فاجعه‌بار متوقف می‌شد.
+* ظرف سرویس‌ها دیگر با خرابی یک ماژول، کل سایت را از کار نمی‌اندازد؛ ماژول مشکل‌دار رد و در `hoosh_seo_boot_errors` ثبت می‌شود.
+* رفع `Modules\Sitemap` در `includes/Modules/Audit.php` که به فضای نام نادرست `HooshSEO\Modules\Modules\Sitemap` اشاره می‌کرد.
+* رفع `Admin::push_notice()` در ردیاب رتبه که بدون `use HooshSEO\Admin` به کلاس ناموجود ارجاع می‌داد.
+* نقشهٔ سایت تصاویر از نو نوشته شد: `Sitemap::image_entries()` وجود نداشت و `query_images()` همیشه آرایهٔ خالی برمی‌گرداند؛ اکنون بر پایهٔ صفحه‌های دارای تصویر ساخته می‌شود و شمارش نمایه با آن هم‌خوان است.
+* سه ناسازگاری متد HTTP بین استودیو و REST برطرف شد: `links/check`، `tools/cron` و `schema/validate`.
+* `tools/cron` اکنون واقعاً کار خواسته‌شده را اجرا می‌کند (`run`/`install`/`schedule`)؛ پیش‌تر فقط وضعیت را برمی‌گرداند.
+* کلیدهای تنظیمات `sitemap.image_sitemap.types`، `sitemap.news_sitemap.publisher`، `sitemap.news_sitemap.genres` و `sitemap.news_sitemap.language` به مقادیر پیش‌فرض افزوده شدند.
+* راهنمای فارسی (`docs/index.html`) ساخته شد؛ پیوند «راهنمای فارسی» در فهرست افزونه‌ها تا پیش از این به فایل ناموجود اشاره می‌کرد.
+* لایهٔ بصری Studio 2.0: نظام سایهٔ سه‌سطحی، حرکت‌های نرم، سرستون چسبان جدول، حلقهٔ فوکوس، اسکرول‌بار، حالت موبایل و پشتیبانی از `prefers-reduced-motion`.
+
 = 1.0.0 =
 * نخستین نسخهٔ عمومی: استودیو، تحلیل محتوا، نقشه سایت، ریدایرکت، ۴۰۴، لینک داخلی، ایندکس‌بان، اسکیما، تصویر، سرعت، کلمات کلیدی، ردیاب رتبه، سرچ کنسول، GEO، ووکامرس، خودکارسازی، هوش مصنوعی، ممیزی و گزارش‌ها.
 
 == Upgrade Notice ==
+
+= 1.0.1 =
+رفع خطای مرگبار فعال‌سازی. به‌روزرسانی توصیه می‌شود؛ پیش از آن یک بکاپ از پایگاه داده بگیرید.
 
 = 1.0.0 =
 نسخهٔ پایه. پیش از فعال‌سازی، یک بکاپ از پایگاه داده بگیرید.

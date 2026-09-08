@@ -19,13 +19,51 @@ defined( 'ABSPATH' ) || exit;
 final class Gateway {
 
 	/**
+	 * Singleton.
+	 *
+	 * The gateway is a stateless facade over static methods, but the service
+	 * container in Plugin::boot() resolves every module through instance(),
+	 * so it needs one to stay loadable.
+	 *
+	 * @var Gateway|null
+	 */
+	private static $instance = null;
+
+	/**
+	 * Get instance.
+	 *
+	 * @return Gateway
+	 */
+	public static function instance() {
+		if ( null === self::$instance ) {
+			self::$instance = new self();
+		}
+		return self::$instance;
+	}
+
+	/**
+	 * Constructor.
+	 */
+	private function __construct() {}
+
+	/**
+	 * Settings handle, null-safe (the gateway is callable before boot finishes).
+	 *
+	 * @return \HooshSEO\Settings|null
+	 */
+	protected static function settings() {
+		$plugin = \hoosh_seo();
+		return $plugin ? $plugin->settings : null;
+	}
+
+	/**
 	 * Is a usable provider configured?
 	 *
 	 * @return bool
 	 */
 	public static function is_configured() {
-		$settings = \hoosh_seo()->settings;
-		if ( ! $settings->on( 'ai.enabled' ) ) {
+		$settings = self::settings();
+		if ( ! $settings || ! $settings->on( 'ai.enabled' ) ) {
 			return false;
 		}
 		$driver = self::active_driver();

@@ -125,12 +125,14 @@ final class Sitemap {
 		}
 
 		if ( $settings->get( 'sitemap.image_sitemap.enabled', true ) ) {
+			$image_count = (int) self::count_images();
+			$per_page    = max( 50, (int) $settings->get( 'sitemap.per_page', 1000 ) );
 			$out['images'] = array(
 				'label'  => __( 'تصاویر', 'hoosh-seo' ),
-				'count'  => (int) self::count_images(),
-				'pages'  => (int) ceil( self::count_images() / 1000 ),
+				'count'  => $image_count,
+				'pages'  => $image_count ? (int) ceil( $image_count / $per_page ) : 1,
 				'loc'    => self::url( 'images' ),
-				'source' => 'media',
+				'source' => 'image',
 			);
 		}
 		if ( $settings->get( 'sitemap.video_sitemap.enabled', false ) ) {
@@ -285,7 +287,14 @@ final class Sitemap {
 	 */
 	public static function count_images() {
 		global $wpdb;
-		return (int) $wpdb->get_var( "SELECT COUNT(ID) FROM {$wpdb->posts} WHERE post_type='attachment' AND post_status='inherit' AND post_mime_type LIKE 'image/%'" ); // phpcs:ignore
+		$types = (array) \hoosh_seo()->settings->get( 'sitemap.image_sitemap.types', array( 'post', 'page' ) );
+		$types = array_values( array_filter( $types, 'post_type_exists' ) );
+		if ( ! $types ) {
+			return 0;
+		}
+		$placeholders = implode( ',', array_fill( 0, count( $types ), '%s' ) );
+		$sql          = "SELECT COUNT(ID) FROM {$wpdb->posts} WHERE post_status='publish' AND post_type IN ($placeholders)"; // phpcs:ignore WordPress.DB.PreparedSQL
+		return (int) $wpdb->get_var( $wpdb->prepare( $sql, $types ) );
 	}
 
 	/**
@@ -687,6 +696,30 @@ final class Sitemap {
 	}
 
 	/**
+	 * Image sitemap entries.
+	 *
+	 * Google's image sitemap pairs a page URL (<loc>) with one or more
+	 * <image:image> blocks, so entries are built from the pages that carry
+	 * images rather than from attachment rows.
+	 *
+	 * @param int $per_page Entries per page.
+	 * @param int $paged    Page number.
+	 * @return array
+	 */
+	protected static function image_entries( $per_page = 1000, $paged = 1 ) {
+		$ids     = self::query_images( $per_page, $paged );
+		$entries = self::entries( $ids, 'image' );
+
+		// Pages with nothing to advertise would only add empty <url> blocks.
+		foreach ( $entries as $key => $entry ) {
+			if ( empty( $entry['images'] ) ) {
+				unset( $entries[ $key ] );
+			}
+		}
+		return $entries;
+	}
+
+	/**
 	 * Images query.
 	 *
 	 * @param int $per_page Per page.
@@ -694,24 +727,24 @@ final class Sitemap {
 	 * @return array
 	 */
 	protected static function query_images( $per_page, $paged ) {
+		$types   = (array) \hoosh_seo()->settings->get( 'sitemap.image_sitemap.types', array( 'post', 'page' ) );
+		$types   = array_values( array_filter( $types, 'post_type_exists' ) );
+		if ( ! $types ) {
+			return array();
+		}
+
 		$query = new \WP_Query(
 			array(
-				'post_type'      => 'attachment',
-				'post_mime_type' => 'image',
-				'post_status'    => 'inherit',
-				'posts_per_page' => $per_page,
-				'paged'          => $paged,
+				'post_type'      => $types,
+				'post_status'    => 'publish',
+				'posts_per_page' => max( 1, (int) $per_page ),
+				'paged'          => max( 1, (int) $paged ),
 				'fields'         => 'ids',
 				'no_found_rows'  => true,
 			)
 		);
-		$out = array();
-		foreach ( (array) $query->posts as $id ) {
-			$parent = (int) $query->post->post_parent;
-			unset( $parent );
-			$out[] = $id;
-		}
-		return array();
+
+		return array_map( 'intval', (array) $query->posts );
 	}
 
 	/**
@@ -802,9 +835,10 @@ final class Sitemap {
 	 * @return array
 	 */
 	protected static function news_for( $post_id ) {
-		$keywords = Meta::focus_keywords( $post_id );
+		$keywords  = Meta::focus_keywords( $post_id );
+		$publisher = trim( (string) \hoosh_seo()->settings->get( 'sitemap.news_sitemap.publisher', '' ) );
 		return array(
-			'name'      => (string) \hoosh_seo()->settings->get( 'sitemap.news_sitemap.publisher', get_bloginfo( 'name' ) ),
+			'name'      => '' !== $publisher ? $publisher : get_bloginfo( 'name' ),
 			'language'  => substr( get_locale(), 0, 2 ),
 			'date'      => get_the_date( 'c', $post_id ),
 			'title'     => get_the_title( $post_id ),
